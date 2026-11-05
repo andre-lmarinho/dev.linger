@@ -14,7 +14,14 @@ func (watcher) RegisterStatusNotifierItem(string) *dbus.Error { return nil }
 
 func TestFormatCompose(t *testing.T) {
 	s := monitor.Service{Name: "demo", Process: "Docker", Members: []monitor.Container{{ID: "a", Name: "web", Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}}}, {ID: "b", Name: "db"}}}
-	if got := formatService(s); got != "demo · web · 127.0.0.1:3000, db · Docker" {
+	if got := formatService(s); got != "demo · Docker" {
+		t.Fatal(got)
+	}
+}
+
+func TestFormatServiceCompact(t *testing.T) {
+	s := monitor.Service{Name: "Vite", Project: "/home/user/shop", Process: "node", PID: 42, Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}, {Address: "::1", Port: 3000}}}
+	if got := formatService(s); got != "shop · Vite · 3000" {
 		t.Fatal(got)
 	}
 }
@@ -30,7 +37,7 @@ func TestComposeMenu(t *testing.T) {
 		t.Fatalf("unexpected project: %#v", project)
 	}
 	web := project.Children[0].Value().(layout)
-	if web.Properties["label"].Value() != "web · 127.0.0.1:3000" {
+	if web.Properties["label"].Value() != "web · 3000" {
 		t.Fatal(web)
 	}
 	_, shallow, err := tray.GetLayout(0, 1, nil)
@@ -45,7 +52,7 @@ func TestComposeMenu(t *testing.T) {
 		t.Fatalf("submenu: %#v %v", children, err)
 	}
 	value, err := tray.GetProperty(web.ID, "label")
-	if err != nil || value.Value() != "web · 127.0.0.1:3000" {
+	if err != nil || value.Value() != "web · 3000" {
 		t.Fatalf("property: %v %v", value, err)
 	}
 }

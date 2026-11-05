@@ -2,8 +2,9 @@ package tray
 
 import (
 	"fmt"
-	"net"
 	"os"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -145,7 +146,7 @@ func (t *Tray) items() []layout {
 			if len(s.Members) == 1 {
 				label = "container"
 			}
-			item.Properties = map[string]dbus.Variant{"label": dbus.MakeVariant(fmt.Sprintf("%s · Docker · %d %s", s.Name, len(s.Members), label)), "children-display": dbus.MakeVariant("submenu")}
+			item.Properties = map[string]dbus.Variant{"label": dbus.MakeVariant(fmt.Sprintf("%s · %d %s", formatService(s), len(s.Members), label)), "children-display": dbus.MakeVariant("submenu")}
 			for _, member := range s.Members {
 				child := layout{ID: childID, Properties: map[string]dbus.Variant{"label": dbus.MakeVariant(formatService(monitor.Service{Name: member.Name, Endpoints: member.Endpoints})), "enabled": dbus.MakeVariant(false)}, Children: []dbus.Variant{}}
 				item.Children = append(item.Children, dbus.MakeVariant(child))
@@ -164,25 +165,25 @@ func (t *Tray) items() []layout {
 }
 
 func formatService(s monitor.Service) string {
-	parts := []string{s.Name}
-	var members []string
-	for _, member := range s.Members {
-		members = append(members, formatService(monitor.Service{Name: member.Name, Endpoints: member.Endpoints}))
-	}
-	if len(members) > 0 {
-		parts = append(parts, strings.Join(members, ", "))
-	}
-	for _, endpoint := range s.Endpoints {
-		parts = append(parts, net.JoinHostPort(endpoint.Address, strconv.Itoa(int(endpoint.Port))))
-	}
-	if s.Process != "" && s.Process != s.Name {
-		parts = append(parts, s.Process)
-	}
-	if s.PID != 0 {
-		parts = append(parts, fmt.Sprintf("PID %d", s.PID))
-	}
+	var parts []string
 	if s.Project != "" {
-		parts = append(parts, s.Project)
+		parts = append(parts, filepath.Base(s.Project))
+	}
+	if s.Name != "" && !slices.Contains(parts, s.Name) {
+		parts = append(parts, s.Name)
+	}
+	if s.Process == "Docker" {
+		parts = append(parts, "Docker")
+	}
+	var ports []string
+	for _, endpoint := range s.Endpoints {
+		port := strconv.Itoa(int(endpoint.Port))
+		if !slices.Contains(ports, port) {
+			ports = append(ports, port)
+		}
+	}
+	if len(ports) > 0 {
+		parts = append(parts, strings.Join(ports, ", "))
 	}
 	return strings.Join(parts, " · ")
 }
