@@ -19,7 +19,7 @@ go build -o devlinger .
 
 The tray menu refreshes every 10 seconds. Select **Quit** to exit.
 
-The menu shows project, stack, ports, Git branch, uptime, CPU and memory when available. Local services show process CPU and resident memory; CPU is calculated between scans and can exceed 100% when multiple cores are used. Docker uptime and resource metrics are not collected. Container and sub-service entries do not show uptime or metrics.
+The menu shows project, stack, ports, Git branch, uptime, CPU and memory when available. Local services show process CPU and resident memory. CPU is calculated between scans using the host CPU count, independent of DevLinger's CPU affinity; 100% represents one fully used core and usage can exceed 100% across multiple cores. CPU is omitted until two valid samples are available and when the host CPU count changes between scans. Docker uptime and resource metrics are not collected. Container and sub-service entries do not show uptime or metrics.
 
 ## Detection
 

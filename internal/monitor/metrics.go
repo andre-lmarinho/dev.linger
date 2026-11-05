@@ -3,7 +3,6 @@ package monitor
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +15,7 @@ type cpuSample struct {
 // Metrics retains only the previous CPU counters needed for the next sample.
 type Metrics struct {
 	total     uint64
+	cores     int
 	processes map[int]cpuSample
 }
 
@@ -35,7 +35,18 @@ func (m *Metrics) update(proc string, services []Service) {
 		}
 		total += value
 	}
-	cores := runtime.NumCPU()
+	cores := 0
+	for _, line := range strings.Split(string(data), "\n")[1:] {
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		if number, ok := strings.CutPrefix(fields[0], "cpu"); ok {
+			if id, err := strconv.Atoi(number); err == nil && id >= 0 {
+				cores++
+			}
+		}
+	}
 	var systemUptime float64
 	if data, err := os.ReadFile(filepath.Join(proc, "uptime")); err == nil {
 		fields := strings.Fields(string(data))
@@ -79,7 +90,7 @@ func (m *Metrics) update(proc string, services []Service) {
 		}
 		current := cpuSample{start: start, ticks: user + system}
 		next[s.PID] = current
-		if previous, ok := m.processes[s.PID]; ok && previous.start == start && current.ticks >= previous.ticks && total > m.total && m.total != 0 && cores > 0 {
+		if previous, ok := m.processes[s.PID]; ok && previous.start == start && current.ticks >= previous.ticks && total > m.total && m.total != 0 && cores > 0 && cores == m.cores {
 			s.CPU = float64(current.ticks-previous.ticks) / float64(total-m.total) * float64(cores) * 100
 			s.CPUValid = true
 		}
@@ -92,5 +103,5 @@ func (m *Metrics) update(proc string, services []Service) {
 			}
 		}
 	}
-	m.total, m.processes = total, next
+	m.total, m.cores, m.processes = total, cores, next
 }

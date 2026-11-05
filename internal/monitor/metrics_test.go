@@ -5,7 +5,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 )
 
@@ -36,7 +35,7 @@ func TestMetrics(t *testing.T) {
 	}
 	writeStat(1200, 30, 123)
 	m.update(proc, services)
-	if !services[0].CPUValid || math.Abs(services[0].CPU-10*float64(runtime.NumCPU())) > 0.001 {
+	if !services[0].CPUValid || math.Abs(services[0].CPU-20) > 0.001 {
 		t.Fatalf("second sample: %+v", services[0])
 	}
 	writeStat(1300, 30, 123)
@@ -44,6 +43,11 @@ func TestMetrics(t *testing.T) {
 	m.update(proc, services)
 	if !services[0].CPUValid || services[0].CPU != 0 || !services[0].MemoryValid || services[0].MemoryMB != 0 {
 		t.Fatalf("valid zero sample: %+v", services[0])
+	}
+	write("stat", "cpu 1350 0 0 0 0 0 0 0\ncpu0 1 0 0 0\n")
+	m.update(proc, services)
+	if services[0].CPUValid {
+		t.Fatal("CPU usage reported after CPU count changed")
 	}
 	writeStat(1400, 40, 124)
 	m.update(proc, services)
