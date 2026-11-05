@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/devlinger/devlinger/internal/monitor"
 	"github.com/godbus/dbus/v5"
@@ -150,7 +151,7 @@ func (t *Tray) items() []layout {
 			item.Properties["children-display"] = dbus.MakeVariant("submenu")
 			item.Properties["enabled"] = dbus.MakeVariant(true)
 			for _, member := range s.Members {
-				child := layout{ID: childID, Properties: serviceProperties(formatServiceName(monitor.Service{Name: member.Name, Endpoints: member.Endpoints})), Children: []dbus.Variant{}}
+				child := layout{ID: childID, Properties: childProperties(formatServiceName(monitor.Service{Name: member.Name, Endpoints: member.Endpoints})), Children: []dbus.Variant{}}
 				item.Children = append(item.Children, dbus.MakeVariant(child))
 				childID++
 			}
@@ -159,7 +160,7 @@ func (t *Tray) items() []layout {
 			item.Properties["children-display"] = dbus.MakeVariant("submenu")
 			item.Properties["enabled"] = dbus.MakeVariant(true)
 			for _, subservice := range s.Subservices {
-				child := layout{ID: childID, Properties: serviceProperties(formatServiceName(subservice)), Children: []dbus.Variant{}}
+				child := layout{ID: childID, Properties: childProperties(formatServiceName(subservice)), Children: []dbus.Variant{}}
 				item.Children = append(item.Children, dbus.MakeVariant(child))
 				childID++
 			}
@@ -178,21 +179,18 @@ func (t *Tray) items() []layout {
 func serviceProperties(label string) map[string]dbus.Variant {
 	return map[string]dbus.Variant{
 		"label":        dbus.MakeVariant(label),
-		"enabled":      dbus.MakeVariant(false),
+		"enabled":      dbus.MakeVariant(true),
 		"toggle-type":  dbus.MakeVariant("radio"),
 		"toggle-state": dbus.MakeVariant(int32(1)),
 	}
 }
 
+func childProperties(label string) map[string]dbus.Variant {
+	return map[string]dbus.Variant{"label": dbus.MakeVariant("↳ " + label), "enabled": dbus.MakeVariant(true)}
+}
+
 func formatService(s monitor.Service) string {
-	cpu, memory := 0.0, 0.0
-	if s.CPU != nil {
-		cpu = *s.CPU
-	}
-	if s.MemoryMB != nil {
-		memory = *s.MemoryMB
-	}
-	return fmt.Sprintf("%s\nCPU %.1f%% · Memory %.1f MB", formatServiceName(s), cpu, memory)
+	return fmt.Sprintf("%s\nCPU %.1f%% · Memory %.0f MB", formatServiceName(s), s.CPU, s.MemoryMB)
 }
 
 func formatServiceName(s monitor.Service) string {
@@ -214,9 +212,25 @@ func formatServiceName(s monitor.Service) string {
 		}
 	}
 	if len(ports) > 0 {
-		parts = append(parts, strings.Join(ports, ", "))
+		parts = append(parts, ":"+strings.Join(ports, ", :"))
+	}
+	if s.Branch != "" {
+		parts = append(parts, s.Branch)
+	}
+	if s.Uptime > 0 {
+		parts = append(parts, formatUptime(s.Uptime))
 	}
 	return strings.Join(parts, " · ")
+}
+
+func formatUptime(uptime time.Duration) string {
+	if uptime >= 24*time.Hour {
+		return fmt.Sprintf("%dd", int(uptime/(24*time.Hour)))
+	}
+	if uptime >= time.Hour {
+		return fmt.Sprintf("%dh", int(uptime/time.Hour))
+	}
+	return fmt.Sprintf("%dm", max(1, int(uptime/time.Minute)))
 }
 
 func (t *Tray) GetLayout(parent int32, depth int32, properties []string) (uint32, layout, *dbus.Error) {

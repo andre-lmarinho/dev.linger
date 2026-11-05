@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type cpuSample struct {
@@ -55,6 +56,13 @@ func (m *Metrics) update(proc string, services []Service) {
 		}
 	}
 	hostCPU, hostMemory := 0.0, 0.0
+	var systemUptime float64
+	if data, err := os.ReadFile(filepath.Join(proc, "uptime")); err == nil {
+		fields := strings.Fields(string(data))
+		if len(fields) > 0 {
+			systemUptime, _ = strconv.ParseFloat(fields[0], 64)
+		}
+	}
 	if m.total != 0 && total > m.total && idle >= m.idle && idle-m.idle <= total-m.total {
 		hostCPU = 100 * float64((total-m.total)-(idle-m.idle)) / float64(total-m.total)
 	}
@@ -85,11 +93,14 @@ func (m *Metrics) update(proc string, services []Service) {
 	for i := range services {
 		s := &services[i]
 		if s.Process == "Docker" {
-			s.CPU, s.MemoryMB = &hostCPU, &hostMemory
+			s.CPU, s.MemoryMB = hostCPU, hostMemory
 			continue
 		}
-		cpu, memory := 0.0, 0.0
-		s.CPU, s.MemoryMB = &cpu, &memory
+		s.CPU, s.MemoryMB = 0, 0
+		// shortcut: Linux /proc start times use USER_HZ (100), revisit for non-Linux ports.
+		if started := float64(s.start) / 100; systemUptime >= started {
+			s.Uptime = time.Duration(systemUptime-started) * time.Second
+		}
 		if s.PID <= 0 {
 			continue
 		}
@@ -115,8 +126,7 @@ func (m *Metrics) update(proc string, services []Service) {
 		current := cpuSample{start: start, ticks: user + system}
 		next[s.PID] = current
 		if previous, ok := m.processes[s.PID]; ok && previous.start == start && current.ticks >= previous.ticks && total > m.total && m.total != 0 && cores > 0 {
-			cpu := float64(current.ticks-previous.ticks) / float64(total-m.total) * float64(cores) * 100
-			s.CPU = &cpu
+			s.CPU = float64(current.ticks-previous.ticks) / float64(total-m.total) * float64(cores) * 100
 		}
 		status, err := os.ReadFile(filepath.Join(base, "status"))
 		if err == nil {
@@ -124,8 +134,7 @@ func (m *Metrics) update(proc string, services []Service) {
 				fields := strings.Fields(line)
 				if len(fields) == 3 && fields[0] == "VmRSS:" && fields[2] == "kB" {
 					if kb, err := strconv.ParseUint(fields[1], 10, 64); err == nil {
-						mb := float64(kb) * 1024 / 1_000_000
-						s.MemoryMB = &mb
+						s.MemoryMB = float64(kb) * 1024 / 1_000_000
 					}
 					break
 				}

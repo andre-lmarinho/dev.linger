@@ -28,22 +28,22 @@ func TestMetrics(t *testing.T) {
 	services := []Service{{PID: 42, start: 123}}
 	var m Metrics
 	m.update(proc, services)
-	if services[0].CPU == nil || *services[0].CPU != 0 || services[0].MemoryMB == nil || *services[0].MemoryMB != 2.097152 {
+	if services[0].CPU != 0 || services[0].MemoryMB != 2.097152 {
 		t.Fatalf("first sample: %+v", services[0])
 	}
 	writeStat(1200, 30, 123)
 	m.update(proc, services)
-	if services[0].CPU == nil || *services[0].CPU != 20 {
+	if services[0].CPU != 20 {
 		t.Fatalf("second sample: %+v", services[0])
 	}
 	writeStat(1400, 40, 124)
 	m.update(proc, services)
-	if services[0].CPU == nil || *services[0].CPU != 0 || services[0].MemoryMB == nil || *services[0].MemoryMB != 0 {
+	if services[0].CPU != 0 || services[0].MemoryMB != 0 {
 		t.Fatalf("reused pid: %+v", services[0])
 	}
 	services[0].start = 124
 	m.update(proc, services)
-	if services[0].CPU == nil || *services[0].CPU != 0 {
+	if services[0].CPU != 0 {
 		t.Fatal("new process used old CPU sample")
 	}
 }
@@ -64,7 +64,7 @@ func TestDockerShowsHostMetrics(t *testing.T) {
 	write("stat", "cpu 150 0 0 950 0 0 0 0\ncpu0 150 0 0 950\n")
 	m.update(proc, services)
 	for _, service := range services {
-		if service.CPU == nil || *service.CPU != 50 || service.MemoryMB == nil || *service.MemoryMB != 768 {
+		if service.CPU != 50 || service.MemoryMB != 768 {
 			t.Fatalf("host metrics for %s: %+v", service.Name, service)
 		}
 	}

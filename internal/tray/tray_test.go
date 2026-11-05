@@ -3,6 +3,7 @@ package tray
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/devlinger/devlinger/internal/monitor"
 	"github.com/godbus/dbus/v5"
@@ -14,39 +15,37 @@ func (watcher) RegisterStatusNotifierItem(string) *dbus.Error { return nil }
 
 func TestFormatCompose(t *testing.T) {
 	s := monitor.Service{Name: "demo", Process: "Docker", Members: []monitor.Container{{ID: "a", Name: "web", Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}}}, {ID: "b", Name: "db"}}}
-	if got := formatService(s); got != "demo · Docker\nCPU 0.0% · Memory 0.0 MB" {
+	if got := formatService(s); got != "demo · Docker\nCPU 0.0% · Memory 0 MB" {
 		t.Fatal(got)
 	}
 }
 
 func TestFormatServiceCompact(t *testing.T) {
-	s := monitor.Service{Name: "Vite", Project: "/home/user/shop", Process: "node", PID: 42, Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}, {Address: "::1", Port: 3000}}}
-	if got := formatService(s); got != "shop · Vite · 3000\nCPU 0.0% · Memory 0.0 MB" {
+	s := monitor.Service{Name: "Vite", Project: "/home/user/shop", Process: "node", PID: 42, Branch: "main", Uptime: 20 * time.Minute, Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}, {Address: "::1", Port: 3000}}}
+	if got := formatService(s); got != "shop · Vite · :3000 · main · 20m\nCPU 0.0% · Memory 0 MB" {
 		t.Fatal(got)
 	}
 }
 
 func TestFormatMetrics(t *testing.T) {
-	cpu, memory := 12.5, 23.0
-	s := monitor.Service{Name: "Vite", CPU: &cpu, MemoryMB: &memory}
-	if got := formatService(s); got != "Vite\nCPU 12.5% · Memory 23.0 MB" {
+	s := monitor.Service{Name: "Vite", CPU: 12.5, MemoryMB: 23}
+	if got := formatService(s); got != "Vite\nCPU 12.5% · Memory 23 MB" {
 		t.Fatal(got)
 	}
-	s.CPU = nil
-	if got := formatService(s); got != "Vite\nCPU 0.0% · Memory 23.0 MB" {
+	s.CPU = 0
+	if got := formatService(s); got != "Vite\nCPU 0.0% · Memory 23 MB" {
 		t.Fatal(got)
 	}
 }
 
 func TestServiceSubmenu(t *testing.T) {
-	cpu, memory := 1.0, 2.0
-	tray := &Tray{services: []monitor.Service{{Name: "Vite", CPU: &cpu, MemoryMB: &memory, Subservices: []monitor.Service{{Name: "HMR", CPU: &cpu, MemoryMB: &memory}}}}}
+	tray := &Tray{services: []monitor.Service{{Name: "Vite", CPU: 1, MemoryMB: 2, Subservices: []monitor.Service{{Name: "HMR", CPU: 1, MemoryMB: 2}}}}}
 	items := tray.items()
-	if items[1].Properties["label"].Value() != "Vite\nCPU 1.0% · Memory 2.0 MB\n1 sub-services" || items[1].Properties["enabled"].Value() != true || len(items[1].Children) != 1 {
+	if items[1].Properties["label"].Value() != "Vite\nCPU 1.0% · Memory 2 MB\n1 sub-services" || items[1].Properties["enabled"].Value() != true || len(items[1].Children) != 1 {
 		t.Fatalf("unexpected service submenu: %#v", items[1])
 	}
 	child := items[1].Children[0].Value().(layout)
-	if child.Properties["label"].Value() != "HMR" {
+	if child.Properties["label"].Value() != "↳ HMR" {
 		t.Fatal(child.Properties["label"].Value())
 	}
 }
@@ -60,18 +59,17 @@ func TestServiceItemsHaveStatusIcon(t *testing.T) {
 }
 
 func TestComposeMenu(t *testing.T) {
-	cpu, memory := 12.0, 300.0
-	tray := &Tray{services: []monitor.Service{{Name: "demo", Process: "Docker", CPU: &cpu, MemoryMB: &memory, Members: []monitor.Container{{Name: "web", Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}}}, {Name: "db"}}}}}
+	tray := &Tray{services: []monitor.Service{{Name: "demo", Process: "Docker", CPU: 12, MemoryMB: 300, Members: []monitor.Container{{Name: "web", Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}}}, {Name: "db"}}}}}
 	_, root, err := tray.GetLayout(0, -1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	project := root.Children[1].Value().(layout)
-	if project.Properties["label"].Value() != "demo · Docker\nCPU 12.0% · Memory 300.0 MB\n2 containers" || project.Properties["enabled"].Value() != true || len(project.Children) != 2 {
+	if project.Properties["label"].Value() != "demo · Docker\nCPU 12.0% · Memory 300 MB\n2 containers" || project.Properties["enabled"].Value() != true || len(project.Children) != 2 {
 		t.Fatalf("unexpected project: %#v", project)
 	}
 	web := project.Children[0].Value().(layout)
-	if web.Properties["label"].Value() != "web · 3000" {
+	if web.Properties["label"].Value() != "↳ web · :3000" {
 		t.Fatal(web)
 	}
 	_, shallow, err := tray.GetLayout(0, 1, nil)
@@ -86,7 +84,7 @@ func TestComposeMenu(t *testing.T) {
 		t.Fatalf("submenu: %#v %v", children, err)
 	}
 	value, err := tray.GetProperty(web.ID, "label")
-	if err != nil || value.Value() != "web · 3000" {
+	if err != nil || value.Value() != "↳ web · :3000" {
 		t.Fatalf("property: %v %v", value, err)
 	}
 }

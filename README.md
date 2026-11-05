@@ -19,7 +19,7 @@ go build -o devlinger .
 
 The tray menu refreshes every 10 seconds. Select **Quit** to exit.
 
-The menu shows CPU and memory on top-level services, using zero until a measurement is available; container and sub-service entries do not show metrics. Local services show process CPU and resident memory; process CPU can exceed 100% when multiple cores are used. Docker entries show total host CPU and used memory, not container usage. Host memory used is total memory minus available memory. CPU is calculated between scans.
+The menu shows project, stack, ports, Git branch, uptime, CPU and memory when they apply. A Compose project's uptime starts with its oldest running container; individual container and sub-service entries stay compact and do not show uptime or metrics. Local services show process CPU and resident memory; process CPU can exceed 100% when multiple cores are used. Docker entries show total host CPU and used memory, not container usage. Host memory used is total memory minus available memory. CPU is calculated between scans.
 
 ## Detection
 

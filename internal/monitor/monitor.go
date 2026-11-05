@@ -17,13 +17,14 @@ import (
 
 type Service struct {
 	Name, Project, Process string
+	Branch                 string
 	ContainerID            string
 	PID                    int
 	Endpoints              []Endpoint
 	Members                []Container
 	Subservices            []Service
-	CPU                    *float64
-	MemoryMB               *float64
+	CPU, MemoryMB          float64
+	Uptime                 time.Duration
 	start                  uint64
 }
 
@@ -90,6 +91,13 @@ func collect(listeners []listener, owners map[string]Service, containers []conta
 			key = "compose:" + project
 		}
 		i, ok := groups[key]
+		uptime := time.Duration(0)
+		if c.Created > 0 {
+			uptime = time.Since(time.Unix(c.Created, 0)).Truncate(time.Second)
+			if uptime < 0 {
+				uptime = 0
+			}
+		}
 		if !ok {
 			i = len(services)
 			groups[key] = i
@@ -97,7 +105,9 @@ func collect(listeners []listener, owners map[string]Service, containers []conta
 			if project != "" {
 				title = project
 			}
-			services = append(services, Service{Name: title, Process: "Docker"})
+			services = append(services, Service{Name: title, Process: "Docker", Uptime: uptime})
+		} else if uptime > services[i].Uptime {
+			services[i].Uptime = uptime
 		}
 		member := Container{ID: c.ID, Name: name}
 		for _, p := range c.Ports {
@@ -261,7 +271,7 @@ func associateSockets(proc string, processes map[int]process) map[string]Service
 	sockets := map[string]association{}
 	for pid, p := range processes {
 		name, evidence, ok := recognized(p, processes)
-		service := Service{Name: name, PID: p.pid, Process: p.name, Project: evidence.cwd, start: p.start}
+		service := Service{Name: name, PID: p.pid, Process: p.name, Project: evidence.cwd, Branch: gitBranch(evidence.cwd), start: p.start}
 		base := filepath.Join(proc, strconv.Itoa(pid))
 		if data, err := os.ReadFile(filepath.Join(base, "cgroup")); ok && err == nil {
 			service.ContainerID = dockerCgroupID(string(data))
@@ -292,6 +302,31 @@ func associateSockets(proc string, processes map[int]process) map[string]Service
 		}
 	}
 	return owners
+}
+
+func gitBranch(project string) string {
+	if project == "" {
+		return ""
+	}
+	git := filepath.Join(project, ".git")
+	if data, err := os.ReadFile(git); err == nil {
+		line := strings.TrimSpace(string(data))
+		if strings.HasPrefix(line, "gitdir: ") {
+			git = strings.TrimPrefix(line, "gitdir: ")
+			if !filepath.IsAbs(git) {
+				git = filepath.Join(project, git)
+			}
+		}
+	}
+	head, err := os.ReadFile(filepath.Join(git, "HEAD"))
+	if err != nil {
+		return ""
+	}
+	value := strings.TrimSpace(string(head))
+	if strings.HasPrefix(value, "ref: refs/heads/") {
+		return strings.TrimPrefix(value, "ref: refs/heads/")
+	}
+	return ""
 }
 
 func dockerCgroupID(cgroup string) string {
@@ -342,10 +377,11 @@ func recognized(p process, processes map[int]process) (string, process, bool) {
 }
 
 type container struct {
-	ID     string            `json:"Id"`
-	Names  []string          `json:"Names"`
-	Labels map[string]string `json:"Labels"`
-	Ports  []struct {
+	ID      string            `json:"Id"`
+	Names   []string          `json:"Names"`
+	Labels  map[string]string `json:"Labels"`
+	Created int64             `json:"Created"`
+	Ports   []struct {
 		IP         string `json:"IP"`
 		PublicPort uint16 `json:"PublicPort"`
 		Type       string `json:"Type"`
