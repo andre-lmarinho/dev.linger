@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test ./...
+      - name: Build binary and Debian package
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o devlinger-linux-amd64 .
+          mkdir -p package/DEBIAN package/usr/bin
+          install -m 755 devlinger-linux-amd64 package/usr/bin/devlinger
+          cat > package/DEBIAN/control <<EOF
+          Package: devlinger
+          Version: ${version}
+          Architecture: amd64
+          Maintainer: DevLinger contributors
+          Description: Linux system tray monitor for local development services
+          EOF
+          dpkg-deb --build --root-owner-group package "devlinger_${version}_amd64.deb"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            devlinger-linux-amd64
+            devlinger_*_amd64.deb

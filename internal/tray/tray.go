@@ -1,0 +1,201 @@
+package tray
+
+import (
+	"fmt"
+	"os"
+	"sync"
+
+	"github.com/devlinger/devlinger/internal/monitor"
+	"github.com/godbus/dbus/v5"
+	"github.com/godbus/dbus/v5/prop"
+)
+
+const itemPath = dbus.ObjectPath("/StatusNotifierItem")
+const menuPath = dbus.ObjectPath("/MenuBar")
+
+type Tray struct {
+	conn     *dbus.Conn
+	props    *prop.Properties
+	mu       sync.RWMutex
+	services []monitor.Service
+	revision uint32
+	quit     chan struct{}
+	once     sync.Once
+}
+
+type pixmap struct {
+	Width, Height int32
+	Data          []byte
+}
+type layout struct {
+	ID         int32
+	Properties map[string]dbus.Variant
+	Children   []dbus.Variant
+}
+type menuItem struct {
+	ID         int32
+	Properties map[string]dbus.Variant
+}
+type event struct {
+	ID        int32
+	EventID   string
+	Data      dbus.Variant
+	Timestamp uint32
+}
+
+func New() (*Tray, error) {
+	conn, err := dbus.ConnectSessionBus()
+	if err != nil {
+		return nil, err
+	}
+	t := &Tray{conn: conn, quit: make(chan struct{})}
+	fail := func(err error) (*Tray, error) { conn.Close(); return nil, err }
+	name := fmt.Sprintf("org.kde.StatusNotifierItem-%d-1", os.Getpid())
+	reply, err := conn.RequestName(name, dbus.NameFlagDoNotQueue)
+	if err != nil {
+		return fail(err)
+	}
+	if reply != dbus.RequestNameReplyPrimaryOwner {
+		return fail(fmt.Errorf("indicator name already owned"))
+	}
+	if err = conn.Export(t, itemPath, "org.kde.StatusNotifierItem"); err != nil {
+		return fail(err)
+	}
+	if err = conn.Export(t, menuPath, "com.canonical.dbusmenu"); err != nil {
+		return fail(err)
+	}
+	icon := make([]byte, 16*16*4)
+	for y := 0; y < 16; y++ {
+		for x := 0; x < 16; x++ {
+			if x >= 2 && x <= 13 && y >= 3 && y <= 12 {
+				i := (y*16 + x) * 4
+				icon[i], icon[i+1], icon[i+2], icon[i+3] = 255, 62, 185, 155
+				if y == 6 || y == 9 {
+					icon[i+1], icon[i+2], icon[i+3] = 235, 255, 250
+				}
+			}
+		}
+	}
+	t.props, err = prop.Export(conn, itemPath, map[string]map[string]*prop.Prop{"org.kde.StatusNotifierItem": {
+		"Category": {Value: "ApplicationStatus", Emit: prop.EmitFalse}, "Id": {Value: "devlinger", Emit: prop.EmitFalse},
+		"Title": {Value: "DevLinger", Emit: prop.EmitTrue}, "Status": {Value: "Active", Emit: prop.EmitFalse},
+		"IconName": {Value: "", Emit: prop.EmitFalse}, "IconPixmap": {Value: []pixmap{{16, 16, icon}}, Emit: prop.EmitFalse},
+		"Menu": {Value: menuPath, Emit: prop.EmitFalse}, "ItemIsMenu": {Value: true, Emit: prop.EmitFalse},
+	}})
+	if err != nil {
+		return fail(err)
+	}
+	_, err = prop.Export(conn, menuPath, map[string]map[string]*prop.Prop{"com.canonical.dbusmenu": {
+		"Version": {Value: uint32(3), Emit: prop.EmitFalse}, "TextDirection": {Value: "ltr", Emit: prop.EmitFalse},
+		"Status": {Value: "normal", Emit: prop.EmitFalse}, "IconThemePath": {Value: []string{}, Emit: prop.EmitFalse},
+	}})
+	if err != nil {
+		return fail(err)
+	}
+	call := conn.Object("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher").Call("org.kde.StatusNotifierWatcher.RegisterStatusNotifierItem", 0, name)
+	if call.Err != nil {
+		return fail(fmt.Errorf("register system tray indicator: %w", call.Err))
+	}
+	return t, nil
+}
+
+func (t *Tray) Update(services []monitor.Service, scanErr error) {
+	t.mu.Lock()
+	t.services = append([]monitor.Service(nil), services...)
+	if scanErr != nil {
+		t.services = []monitor.Service{{Name: "Unable to read listeners"}}
+	}
+	t.revision++
+	rev := t.revision
+	t.mu.Unlock()
+	t.props.SetMust("org.kde.StatusNotifierItem", "Title", fmt.Sprintf("DevLinger — %d services", len(services)))
+	t.conn.Emit(itemPath, "org.kde.StatusNotifierItem.NewTitle")
+	t.conn.Emit(menuPath, "com.canonical.dbusmenu.LayoutUpdated", rev, int32(0))
+}
+
+func (t *Tray) Done() <-chan struct{}                      { return t.quit }
+func (t *Tray) Close()                                     { t.conn.Close() }
+func (t *Tray) Activate(int32, int32) *dbus.Error          { return nil }
+func (t *Tray) SecondaryActivate(int32, int32) *dbus.Error { return nil }
+func (t *Tray) ContextMenu(int32, int32) *dbus.Error       { return nil }
+func (t *Tray) Scroll(int32, string) *dbus.Error           { return nil }
+
+func (t *Tray) items() []layout {
+	items := []layout{{ID: 1, Properties: map[string]dbus.Variant{"label": dbus.MakeVariant(fmt.Sprintf("DevLinger — %d services", len(t.services))), "enabled": dbus.MakeVariant(false)}}}
+	if len(t.services) == 0 {
+		items = append(items, layout{ID: 2, Properties: map[string]dbus.Variant{"label": dbus.MakeVariant("No services found"), "enabled": dbus.MakeVariant(false)}})
+	}
+	for i, s := range t.services {
+		items = append(items, layout{ID: int32(i + 10), Properties: map[string]dbus.Variant{"label": dbus.MakeVariant(s.String()), "enabled": dbus.MakeVariant(false)}})
+	}
+	items = append(items, layout{ID: 3, Properties: map[string]dbus.Variant{"type": dbus.MakeVariant("separator")}}, layout{ID: 4, Properties: map[string]dbus.Variant{"label": dbus.MakeVariant("Quit")}})
+	for i := range items {
+		items[i].Children = []dbus.Variant{}
+	}
+	return items
+}
+
+func (t *Tray) GetLayout(parent int32, depth int32, properties []string) (uint32, layout, *dbus.Error) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	root := layout{ID: 0, Properties: map[string]dbus.Variant{"children-display": dbus.MakeVariant("submenu")}, Children: []dbus.Variant{}}
+	if parent == 0 && depth != 0 {
+		for _, item := range t.items() {
+			root.Children = append(root.Children, dbus.MakeVariant(item))
+		}
+	} else if parent != 0 {
+		for _, item := range t.items() {
+			if item.ID == parent {
+				return t.revision, item, nil
+			}
+		}
+		return 0, root, dbus.MakeFailedError(fmt.Errorf("unknown menu item"))
+	}
+	return t.revision, root, nil
+}
+
+func (t *Tray) GetGroupProperties(ids []int32, names []string) ([]menuItem, *dbus.Error) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	var result []menuItem
+	for _, item := range t.items() {
+		for _, id := range ids {
+			if item.ID == id {
+				result = append(result, menuItem{item.ID, item.Properties})
+				break
+			}
+		}
+	}
+	if result == nil {
+		result = []menuItem{}
+	}
+	return result, nil
+}
+func (t *Tray) GetProperty(id int32, name string) (dbus.Variant, *dbus.Error) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	for _, item := range t.items() {
+		if item.ID == id {
+			if value, ok := item.Properties[name]; ok {
+				return value, nil
+			}
+		}
+	}
+	return dbus.Variant{}, dbus.MakeFailedError(fmt.Errorf("unknown property"))
+}
+func (t *Tray) Event(id int32, eventID string, data dbus.Variant, timestamp uint32) *dbus.Error {
+	if id == 4 && eventID == "clicked" {
+		t.once.Do(func() { close(t.quit) })
+	}
+	return nil
+}
+func (t *Tray) EventGroup(events []event) ([]int32, *dbus.Error) {
+	for _, e := range events {
+		t.Event(e.ID, e.EventID, e.Data, e.Timestamp)
+	}
+	return []int32{}, nil
+}
+func (t *Tray) AboutToShow(int32) (bool, *dbus.Error) { return false, nil }
+func (t *Tray) AboutToShowGroup(ids []int32) ([]int32, []int32, *dbus.Error) {
+	return []int32{}, []int32{}, nil
+}
