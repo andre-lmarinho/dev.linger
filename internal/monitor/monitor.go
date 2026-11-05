@@ -135,6 +135,7 @@ func addEndpoint(endpoints []Endpoint, endpoint Endpoint) []Endpoint {
 func readListeners(proc string) ([]listener, error) {
 	var result []listener
 	var firstErr error
+	readable := false
 	for _, name := range []string{"tcp", "tcp6"} {
 		f, err := os.Open(filepath.Join(proc, "net", name))
 		if err != nil {
@@ -163,12 +164,16 @@ func readListeners(proc string) ([]listener, error) {
 			}
 			result = append(result, listener{address, uint16(port), fields[9]})
 		}
-		if err := s.Err(); err != nil && firstErr == nil {
-			firstErr = err
+		if err := s.Err(); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+		} else {
+			readable = true
 		}
 		f.Close()
 	}
-	if result == nil && firstErr != nil {
+	if !readable && len(result) == 0 && firstErr != nil {
 		return nil, firstErr
 	}
 	return result, nil

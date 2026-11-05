@@ -29,6 +29,34 @@ func TestReadListeners(t *testing.T) {
 	}
 }
 
+func TestReadListenersWithMissingTable(t *testing.T) {
+	for _, table := range []string{"tcp", "tcp6"} {
+		t.Run(table, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.Mkdir(filepath.Join(dir, "net"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "net", table), []byte("header\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			listeners, err := readListeners(dir)
+			if err != nil || len(listeners) != 0 {
+				t.Fatalf("empty readable table: listeners=%v err=%v", listeners, err)
+			}
+		})
+	}
+	if _, err := readListeners(t.TempDir()); err == nil {
+		t.Fatal("expected an error when both tables are unavailable")
+	}
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "net", "tcp"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readListeners(dir); err == nil {
+		t.Fatal("expected an error when the readable table cannot be scanned")
+	}
+}
+
 func TestDecodeIPv6(t *testing.T) {
 	if got := decodeAddress("00000000000000000000000001000000"); got != "::1" {
 		t.Fatal(got)
