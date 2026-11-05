@@ -143,24 +143,17 @@ func (t *Tray) items() []layout {
 	for i, s := range t.services {
 		item := layout{ID: int32(i + 10), Properties: serviceProperties(formatService(s)), Children: []dbus.Variant{}}
 		if len(s.Members) > 0 {
-			label := "containers"
+			label := "sub-services"
+			if s.Docker {
+				label = "containers"
+			}
 			if len(s.Members) == 1 {
-				label = "container"
+				label = strings.TrimSuffix(label, "s")
 			}
 			item.Properties = serviceProperties(fmt.Sprintf("%s\n%d %s", formatService(s), len(s.Members), label))
 			item.Properties["children-display"] = dbus.MakeVariant("submenu")
-			item.Properties["enabled"] = dbus.MakeVariant(true)
 			for _, member := range s.Members {
-				child := layout{ID: childID, Properties: childProperties(formatServiceName(monitor.Service{Name: member.Name, Endpoints: member.Endpoints})), Children: []dbus.Variant{}}
-				item.Children = append(item.Children, dbus.MakeVariant(child))
-				childID++
-			}
-		} else if len(s.Subservices) > 0 {
-			item.Properties = serviceProperties(fmt.Sprintf("%s\n%d sub-services", formatService(s), len(s.Subservices)))
-			item.Properties["children-display"] = dbus.MakeVariant("submenu")
-			item.Properties["enabled"] = dbus.MakeVariant(true)
-			for _, subservice := range s.Subservices {
-				child := layout{ID: childID, Properties: childProperties(formatServiceName(subservice)), Children: []dbus.Variant{}}
+				child := layout{ID: childID, Properties: childProperties(formatServiceName(member)), Children: []dbus.Variant{}}
 				item.Children = append(item.Children, dbus.MakeVariant(child))
 				childID++
 			}
@@ -201,7 +194,7 @@ func formatServiceName(s monitor.Service) string {
 	if s.Name != "" && !slices.Contains(parts, s.Name) {
 		parts = append(parts, s.Name)
 	}
-	if s.Process == "Docker" {
+	if s.Docker {
 		parts = append(parts, "Docker")
 	}
 	var ports []string
@@ -236,10 +229,7 @@ func formatUptime(uptime time.Duration) string {
 func (t *Tray) GetLayout(parent int32, depth int32, properties []string) (uint32, layout, *dbus.Error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	root := layout{ID: 0, Properties: map[string]dbus.Variant{"children-display": dbus.MakeVariant("submenu")}, Children: []dbus.Variant{}}
-	for _, item := range t.items() {
-		root.Children = append(root.Children, dbus.MakeVariant(item))
-	}
+	root := t.root()
 	if parent != 0 {
 		found, ok := findItem(root, parent)
 		if !ok {
@@ -248,6 +238,14 @@ func (t *Tray) GetLayout(parent int32, depth int32, properties []string) (uint32
 		root = found
 	}
 	return t.revision, limitDepth(root, depth), nil
+}
+
+func (t *Tray) root() layout {
+	root := layout{ID: 0, Properties: map[string]dbus.Variant{"children-display": dbus.MakeVariant("submenu")}, Children: []dbus.Variant{}}
+	for _, item := range t.items() {
+		root.Children = append(root.Children, dbus.MakeVariant(item))
+	}
+	return root
 }
 
 func findItem(item layout, id int32) (layout, bool) {
@@ -281,10 +279,7 @@ func (t *Tray) GetGroupProperties(ids []int32, names []string) ([]menuItem, *dbu
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	var result []menuItem
-	root := layout{ID: 0}
-	for _, item := range t.items() {
-		root.Children = append(root.Children, dbus.MakeVariant(item))
-	}
+	root := t.root()
 	for _, id := range ids {
 		if item, ok := findItem(root, id); ok {
 			result = append(result, menuItem{item.ID, item.Properties})
@@ -298,10 +293,7 @@ func (t *Tray) GetGroupProperties(ids []int32, names []string) ([]menuItem, *dbu
 func (t *Tray) GetProperty(id int32, name string) (dbus.Variant, *dbus.Error) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-	root := layout{ID: 0}
-	for _, item := range t.items() {
-		root.Children = append(root.Children, dbus.MakeVariant(item))
-	}
+	root := t.root()
 	if item, ok := findItem(root, id); ok {
 		if value, ok := item.Properties[name]; ok {
 			return value, nil

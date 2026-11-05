@@ -16,21 +16,16 @@ import (
 )
 
 type Service struct {
-	Name, Project, Process string
-	Branch                 string
-	ContainerID            string
-	PID                    int
-	Endpoints              []Endpoint
-	Members                []Container
-	Subservices            []Service
-	CPU, MemoryMB          float64
-	Uptime                 time.Duration
-	start                  uint64
-}
-
-type Container struct {
-	ID, Name  string
-	Endpoints []Endpoint
+	Name, Project string
+	Branch        string
+	ContainerID   string
+	Docker        bool
+	PID           int
+	Endpoints     []Endpoint
+	Members       []Service
+	CPU, MemoryMB float64
+	Uptime        time.Duration
+	start         uint64
 }
 
 type Endpoint struct {
@@ -78,7 +73,10 @@ func collect(listeners []listener, owners map[string]Service, containers []conta
 	}
 	groups := map[string]int{}
 	for _, c := range containers {
-		name := strings.TrimPrefix(first(c.Names), "/")
+		name := ""
+		if len(c.Names) > 0 {
+			name = strings.TrimPrefix(c.Names[0], "/")
+		}
 		if name == "" {
 			name = c.ID
 			if len(name) > 12 {
@@ -105,11 +103,11 @@ func collect(listeners []listener, owners map[string]Service, containers []conta
 			if project != "" {
 				title = project
 			}
-			services = append(services, Service{Name: title, Process: "Docker", Uptime: uptime})
+			services = append(services, Service{Name: title, Docker: true, Uptime: uptime})
 		} else if uptime > services[i].Uptime {
 			services[i].Uptime = uptime
 		}
-		member := Container{ID: c.ID, Name: name}
+		member := Service{Name: name, ContainerID: c.ID}
 		for _, p := range c.Ports {
 			if p.Type == "tcp" && p.PublicPort != 0 {
 				member.Endpoints = addEndpoint(member.Endpoints, Endpoint{p.IP, p.PublicPort})
@@ -157,15 +155,15 @@ func readListeners(proc string) ([]listener, error) {
 			if len(fields) < 10 || fields[3] != "0A" {
 				continue
 			}
-			parts := strings.Split(fields[1], ":")
-			if len(parts) != 2 {
+			addressHex, portHex, ok := strings.Cut(fields[1], ":")
+			if !ok {
 				continue
 			}
-			port, err := strconv.ParseUint(parts[1], 16, 16)
+			port, err := strconv.ParseUint(portHex, 16, 16)
 			if err != nil {
 				continue
 			}
-			address := decodeAddress(parts[0])
+			address := decodeAddress(addressHex)
 			if address == "" {
 				continue
 			}
@@ -204,7 +202,7 @@ func decodeAddress(hex string) string {
 type process struct {
 	pid, parent int
 	start       uint64
-	cwd, name   string
+	cwd         string
 	args        []string
 }
 
@@ -255,8 +253,7 @@ func readProcesses(proc string, uid int) map[int]process {
 			continue
 		}
 		cwd, _ := os.Readlink(filepath.Join(base, "cwd"))
-		name, _ := os.ReadFile(filepath.Join(base, "comm"))
-		processes[pid] = process{pid: pid, parent: parent, start: start, cwd: cwd, name: strings.TrimSpace(string(name)), args: strings.Split(strings.TrimRight(string(cmd), "\x00"), "\x00")}
+		processes[pid] = process{pid: pid, parent: parent, start: start, cwd: cwd, args: strings.Split(strings.TrimRight(string(cmd), "\x00"), "\x00")}
 	}
 	return processes
 }
@@ -271,7 +268,7 @@ func associateSockets(proc string, processes map[int]process) map[string]Service
 	sockets := map[string]association{}
 	for pid, p := range processes {
 		name, evidence, ok := recognized(p, processes)
-		service := Service{Name: name, PID: p.pid, Process: p.name, Project: evidence.cwd, Branch: gitBranch(evidence.cwd), start: p.start}
+		service := Service{Name: name, PID: p.pid, Project: evidence.cwd, Branch: gitBranch(evidence.cwd), start: p.start}
 		base := filepath.Join(proc, strconv.Itoa(pid))
 		if data, err := os.ReadFile(filepath.Join(base, "cgroup")); ok && err == nil {
 			service.ContainerID = dockerCgroupID(string(data))
@@ -323,8 +320,8 @@ func gitBranch(project string) string {
 		return ""
 	}
 	value := strings.TrimSpace(string(head))
-	if strings.HasPrefix(value, "ref: refs/heads/") {
-		return strings.TrimPrefix(value, "ref: refs/heads/")
+	if branch, ok := strings.CutPrefix(value, "ref: refs/heads/"); ok {
+		return branch
 	}
 	return ""
 }
@@ -427,11 +424,4 @@ func dockerAt(ctx context.Context, socket string) []container {
 		return nil
 	}
 	return result
-}
-
-func first(s []string) string {
-	if len(s) == 0 {
-		return ""
-	}
-	return s[0]
 }

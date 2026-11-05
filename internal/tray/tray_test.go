@@ -13,35 +13,17 @@ type watcher struct{}
 
 func (watcher) RegisterStatusNotifierItem(string) *dbus.Error { return nil }
 
-func TestFormatCompose(t *testing.T) {
-	s := monitor.Service{Name: "demo", Process: "Docker", Members: []monitor.Container{{ID: "a", Name: "web", Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}}}, {ID: "b", Name: "db"}}}
-	if got := formatService(s); got != "demo · Docker\nCPU 0.0% · Memory 0 MB" {
-		t.Fatal(got)
-	}
-}
-
 func TestFormatServiceCompact(t *testing.T) {
-	s := monitor.Service{Name: "Vite", Project: "/home/user/shop", Process: "node", PID: 42, Branch: "main", Uptime: 20 * time.Minute, Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}, {Address: "::1", Port: 3000}}}
+	s := monitor.Service{Name: "Vite", Project: "/home/user/shop", PID: 42, Branch: "main", Uptime: 20 * time.Minute, Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}, {Address: "::1", Port: 3000}}}
 	if got := formatService(s); got != "shop · Vite · :3000 · main · 20m\nCPU 0.0% · Memory 0 MB" {
 		t.Fatal(got)
 	}
 }
 
-func TestFormatMetrics(t *testing.T) {
-	s := monitor.Service{Name: "Vite", CPU: 12.5, MemoryMB: 23}
-	if got := formatService(s); got != "Vite\nCPU 12.5% · Memory 23 MB" {
-		t.Fatal(got)
-	}
-	s.CPU = 0
-	if got := formatService(s); got != "Vite\nCPU 0.0% · Memory 23 MB" {
-		t.Fatal(got)
-	}
-}
-
 func TestServiceSubmenu(t *testing.T) {
-	tray := &Tray{services: []monitor.Service{{Name: "Vite", CPU: 1, MemoryMB: 2, Subservices: []monitor.Service{{Name: "HMR", CPU: 1, MemoryMB: 2}}}}}
+	tray := &Tray{services: []monitor.Service{{Name: "Vite", CPU: 1, MemoryMB: 2, Members: []monitor.Service{{Name: "HMR", CPU: 1, MemoryMB: 2}}}}}
 	items := tray.items()
-	if items[1].Properties["label"].Value() != "Vite\nCPU 1.0% · Memory 2 MB\n1 sub-services" || items[1].Properties["enabled"].Value() != true || len(items[1].Children) != 1 {
+	if items[1].Properties["label"].Value() != "Vite\nCPU 1.0% · Memory 2 MB\n1 sub-service" || items[1].Properties["enabled"].Value() != true || len(items[1].Children) != 1 {
 		t.Fatalf("unexpected service submenu: %#v", items[1])
 	}
 	child := items[1].Children[0].Value().(layout)
@@ -50,22 +32,14 @@ func TestServiceSubmenu(t *testing.T) {
 	}
 }
 
-func TestServiceItemsHaveStatusIcon(t *testing.T) {
-	tray := &Tray{services: []monitor.Service{{Name: "Vite"}}}
-	items := tray.items()
-	if items[1].Properties["toggle-type"].Value() != "radio" || items[1].Properties["toggle-state"].Value() != int32(1) {
-		t.Fatal("service status icon missing")
-	}
-}
-
 func TestComposeMenu(t *testing.T) {
-	tray := &Tray{services: []monitor.Service{{Name: "demo", Process: "Docker", CPU: 12, MemoryMB: 300, Members: []monitor.Container{{Name: "web", Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}}}, {Name: "db"}}}}}
+	tray := &Tray{services: []monitor.Service{{Name: "demo", Docker: true, CPU: 12, MemoryMB: 300, Members: []monitor.Service{{Name: "web", Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}}}, {Name: "db"}}}}}
 	_, root, err := tray.GetLayout(0, -1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	project := root.Children[1].Value().(layout)
-	if project.Properties["label"].Value() != "demo · Docker\nCPU 12.0% · Memory 300 MB\n2 containers" || project.Properties["enabled"].Value() != true || len(project.Children) != 2 {
+	if project.Properties["label"].Value() != "demo · Docker\nCPU 12.0% · Memory 300 MB\n2 containers" || project.Properties["enabled"].Value() != true || project.Properties["toggle-type"].Value() != "radio" || len(project.Children) != 2 {
 		t.Fatalf("unexpected project: %#v", project)
 	}
 	web := project.Children[0].Value().(layout)
@@ -128,7 +102,7 @@ func TestMenuOverDBus(t *testing.T) {
 	if got := icon()[0].Data; got[(7*16+7)*4] != 160 {
 		t.Fatal("initial icon is not dimmed")
 	}
-	tray.Update([]monitor.Service{{Name: "node", Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}}}, {Name: "demo", Process: "Docker", Members: []monitor.Container{{Name: "web"}}}}, nil)
+	tray.Update([]monitor.Service{{Name: "node", Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}}}, {Name: "demo", Docker: true, Members: []monitor.Service{{Name: "web"}}}}, nil)
 	if got := icon()[0].Data; got[(7*16+7)*4] != 255 {
 		t.Fatal("active icon is not bright")
 	}

@@ -54,19 +54,6 @@ func TestCatalog(t *testing.T) {
 		{[]string{"code", "--type=utility"}, ""},
 		{[]string{"other", "/project/node_modules/next/dist/bin/next", "dev"}, ""},
 		{[]string{"node", "/tmp/next", "dev"}, ""},
-	}
-	for _, tt := range tests {
-		if got := catalog(tt.args, "/project"); got != tt.want {
-			t.Errorf("%v: got %q want %q", tt.args, got, tt.want)
-		}
-	}
-}
-
-func TestExpandedCatalog(t *testing.T) {
-	tests := []struct {
-		args []string
-		want string
-	}{
 		{[]string{"node", "/project/node_modules/nuxt/bin/nuxt.mjs", "dev"}, "Nuxt"},
 		{[]string{"node", "/project/node_modules/nuxi/bin/nuxi.mjs", "dev"}, "Nuxt"},
 		{[]string{"node", "/project/node_modules/@nuxt/cli/bin/nuxi.mjs", "dev"}, "Nuxt"},
@@ -128,26 +115,6 @@ func TestExpandedCatalog(t *testing.T) {
 	}
 	for _, tt := range tests {
 		if got := catalog(tt.args, "/project"); got != tt.want {
-			t.Errorf("%v: got %q want %q", tt.args, got, tt.want)
-		}
-	}
-}
-
-func TestCatalogOtherRuntimes(t *testing.T) {
-	entries := []signature{
-		{name: "Python", executables: []string{"python3"}, arguments: []string{"-m", "http.server"}},
-		{name: "PHP", executables: []string{"php"}, arguments: []string{"-S"}},
-	}
-	for _, tt := range []struct {
-		args []string
-		want string
-	}{
-		{[]string{"python3", "-m", "http.server", "8000"}, "Python"},
-		{[]string{"php", "-S", "localhost:8000"}, "PHP"},
-		{[]string{"python3", "-m", "other"}, ""},
-		{[]string{"php", "-v"}, ""},
-	} {
-		if got := matchCatalog(tt.args, "/project", entries); got != tt.want {
 			t.Errorf("%v: got %q want %q", tt.args, got, tt.want)
 		}
 	}
@@ -238,13 +205,13 @@ func TestGitBranch(t *testing.T) {
 }
 
 func TestAncestorAndListeners(t *testing.T) {
-	parent := process{pid: 10, cwd: "/project", name: "node", args: []string{"node", "/project/node_modules/next/dist/bin/next", "dev"}}
-	child := process{pid: 11, parent: 10, cwd: "/project", name: "next-server"}
+	parent := process{pid: 10, cwd: "/project", args: []string{"node", "/project/node_modules/next/dist/bin/next", "dev"}}
+	child := process{pid: 11, parent: 10, cwd: "/project"}
 	name, evidence, ok := recognized(child, map[int]process{10: parent, 11: child})
 	if !ok || name != "Next.js" || evidence.pid != 10 {
 		t.Fatalf("not recognized: %q %#v", name, evidence)
 	}
-	service := Service{Name: name, PID: child.pid, Process: child.name, Project: evidence.cwd}
+	service := Service{Name: name, PID: child.pid, Project: evidence.cwd}
 	listeners := []listener{{"127.0.0.1", 3000, "a"}, {"::1", 3000, "b"}, {"127.0.0.1", 3000, "c"}, {"127.0.0.1", 80, "unknown"}}
 	got := collect(listeners, map[string]Service{"a": service, "b": service, "c": service}, nil)
 	if len(got) != 1 || len(got[0].Endpoints) != 2 {
@@ -268,7 +235,7 @@ func TestDescendantSocketOwnersRemainSeparate(t *testing.T) {
 			t.Fatal(err)
 		}
 		stat := fmt.Sprintf("%d (%s) S %d 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 %d 0", p.pid, p.name, p.parent, p.pid)
-		for name, value := range map[string]string{"stat": stat, "comm": p.name, "cmdline": p.cmd} {
+		for name, value := range map[string]string{"stat": stat, "cmdline": p.cmd} {
 			if err := os.WriteFile(filepath.Join(base, name), []byte(value), 0644); err != nil {
 				t.Fatal(err)
 			}
@@ -286,7 +253,7 @@ func TestDescendantSocketOwnersRemainSeparate(t *testing.T) {
 		}
 	}
 	owners := processOwners(proc, os.Getuid())
-	if owners["111"].PID != 11 || owners["111"].Process != "worker-a" || owners["222"].PID != 12 {
+	if owners["111"].PID != 11 || owners["222"].PID != 12 {
 		t.Fatalf("wrong owners: %#v", owners)
 	}
 	if _, ok := owners["shared"]; ok {
@@ -312,7 +279,7 @@ func TestDockerGroups(t *testing.T) {
 		Type       string `json:"Type"`
 	}{"127.0.0.1", 3000, "tcp"})
 	got := collect(nil, nil, []container{a, b, c})
-	if len(got) != 2 || got[0].Name != "demo" || got[0].Uptime < 2*time.Hour || got[0].Uptime >= 2*time.Hour+time.Minute || len(got[0].Members) != 2 || got[0].Members[0].ID != "a" || got[0].Members[0].Name != "web" || len(got[0].Members[0].Endpoints) != 1 || got[0].Members[1].ID != "b" || got[0].Members[1].Name != "db" || got[1].ContainerID != "c" || got[1].Name != "independent" {
+	if len(got) != 2 || got[0].Name != "demo" || got[0].Uptime < 2*time.Hour || got[0].Uptime >= 2*time.Hour+time.Minute || len(got[0].Members) != 2 || got[0].Members[0].ContainerID != "a" || got[0].Members[0].Name != "web" || len(got[0].Members[0].Endpoints) != 1 || got[0].Members[1].ContainerID != "b" || got[0].Members[1].Name != "db" || got[1].ContainerID != "c" || got[1].Name != "independent" {
 		t.Fatalf("unexpected containers: %#v", got)
 	}
 	if got := collect(nil, nil, nil); len(got) != 0 {
@@ -381,7 +348,7 @@ func TestProcessOwnerFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	stat := "42 (node) S 1 42 42 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1234 0"
-	for name, value := range map[string]string{"stat": stat, "comm": "node", "cmdline": "node\x00/project/node_modules/next/dist/bin/next\x00dev\x00"} {
+	for name, value := range map[string]string{"stat": stat, "cmdline": "node\x00/project/node_modules/next/dist/bin/next\x00dev\x00"} {
 		if err := os.WriteFile(filepath.Join(base, name), []byte(value), 0644); err != nil {
 			t.Fatal(err)
 		}

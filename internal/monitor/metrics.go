@@ -3,6 +3,7 @@ package monitor
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -24,37 +25,21 @@ func (m *Metrics) Update(services []Service) {
 }
 
 func (m *Metrics) update(proc string, services []Service) {
-	data, err := os.ReadFile(filepath.Join(proc, "stat"))
-	var total uint64
-	var idle uint64
-	var cores int
-	if err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
-			fields := strings.Fields(line)
-			if len(fields) == 0 {
-				continue
-			}
-			if fields[0] == "cpu" && len(fields) >= 5 {
-				// Guest time is already included in user and nice.
-				for i, field := range fields[1:min(len(fields), 9)] {
-					value, parseErr := strconv.ParseUint(field, 10, 64)
-					if parseErr != nil {
-						total = 0
-						idle = 0
-						break
-					}
-					total += value
-					if i == 3 || i == 4 {
-						idle += value
-					}
-				}
-			} else if strings.HasPrefix(fields[0], "cpu") {
-				if _, err := strconv.Atoi(strings.TrimPrefix(fields[0], "cpu")); err == nil {
-					cores++
-				}
-			}
+	data, _ := os.ReadFile(filepath.Join(proc, "stat"))
+	fields := strings.Fields(strings.SplitN(string(data), "\n", 2)[0])
+	var total, idle uint64
+	for i, field := range fields[min(1, len(fields)):min(len(fields), 9)] {
+		value, err := strconv.ParseUint(field, 10, 64)
+		if err != nil {
+			total, idle = 0, 0
+			break
+		}
+		total += value
+		if i == 3 || i == 4 {
+			idle += value
 		}
 	}
+	cores := runtime.NumCPU()
 	hostCPU, hostMemory := 0.0, 0.0
 	var systemUptime float64
 	if data, err := os.ReadFile(filepath.Join(proc, "uptime")); err == nil {
@@ -68,7 +53,6 @@ func (m *Metrics) update(proc string, services []Service) {
 	}
 	if meminfo, err := os.ReadFile(filepath.Join(proc, "meminfo")); err == nil {
 		var memoryTotal, available uint64
-		var haveTotal, haveAvailable bool
 		for _, line := range strings.Split(string(meminfo), "\n") {
 			fields := strings.Fields(line)
 			if len(fields) != 3 || fields[2] != "kB" {
@@ -80,19 +64,19 @@ func (m *Metrics) update(proc string, services []Service) {
 			}
 			switch fields[0] {
 			case "MemTotal:":
-				memoryTotal, haveTotal = value, true
+				memoryTotal = value
 			case "MemAvailable:":
-				available, haveAvailable = value, true
+				available = value
 			}
 		}
-		if haveTotal && haveAvailable && memoryTotal >= available {
+		if memoryTotal >= available {
 			hostMemory = float64(memoryTotal-available) * 1024 / 1_000_000
 		}
 	}
 	next := make(map[int]cpuSample)
 	for i := range services {
 		s := &services[i]
-		if s.Process == "Docker" {
+		if s.Docker {
 			s.CPU, s.MemoryMB = hostCPU, hostMemory
 			continue
 		}
@@ -128,16 +112,11 @@ func (m *Metrics) update(proc string, services []Service) {
 		if previous, ok := m.processes[s.PID]; ok && previous.start == start && current.ticks >= previous.ticks && total > m.total && m.total != 0 && cores > 0 {
 			s.CPU = float64(current.ticks-previous.ticks) / float64(total-m.total) * float64(cores) * 100
 		}
-		status, err := os.ReadFile(filepath.Join(base, "status"))
-		if err == nil {
-			for _, line := range strings.Split(string(status), "\n") {
-				fields := strings.Fields(line)
-				if len(fields) == 3 && fields[0] == "VmRSS:" && fields[2] == "kB" {
-					if kb, err := strconv.ParseUint(fields[1], 10, 64); err == nil {
-						s.MemoryMB = float64(kb) * 1024 / 1_000_000
-					}
-					break
-				}
+		statm, err := os.ReadFile(filepath.Join(base, "statm"))
+		fields = strings.Fields(string(statm))
+		if err == nil && len(fields) > 1 {
+			if pages, err := strconv.ParseUint(fields[1], 10, 64); err == nil {
+				s.MemoryMB = float64(pages*uint64(os.Getpagesize())) / 1_000_000
 			}
 		}
 	}
