@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -12,13 +11,26 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
 type Service struct {
-	Name, Address, Project, Process string
-	Port                            uint16
-	PID                             int
+	Name, Project, Process string
+	ContainerID            string
+	PID                    int
+	Endpoints              []Endpoint
+	Members                []Container
+}
+
+type Container struct {
+	ID, Name  string
+	Endpoints []Endpoint
+}
+
+type Endpoint struct {
+	Address string
+	Port    uint16
 }
 
 type listener struct {
@@ -33,22 +45,33 @@ func Scan(ctx context.Context) ([]Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	owners := processOwners("/proc")
-	containers := docker(ctx)
-	services := make([]Service, 0, len(listeners)+len(containers))
+	owners := processOwners("/proc", os.Getuid())
+	return collect(listeners, owners, docker(ctx)), nil
+}
+
+func collect(listeners []listener, owners map[string]Service, containers []container) []Service {
+	services := []Service{}
+	processes := map[int]int{}
+	containerIDs := make(map[string]bool, len(containers))
+	for _, c := range containers {
+		if c.ID != "" {
+			containerIDs[c.ID] = true
+		}
+	}
 	for _, l := range listeners {
-		owner := owners[l.inode]
-		if owner.Process == "docker-proxy" && published(containers, l) {
+		owner, ok := owners[l.inode]
+		if !ok || containerIDs[owner.ContainerID] {
 			continue
 		}
-		owner.Address, owner.Port = l.address, l.port
-		if owner.Process == "" {
-			owner.Name = "Unknown process"
-		} else {
-			owner.Name = owner.Process
+		i, ok := processes[owner.PID]
+		if !ok {
+			i = len(services)
+			processes[owner.PID] = i
+			services = append(services, owner)
 		}
-		services = append(services, owner)
+		services[i].Endpoints = addEndpoint(services[i].Endpoints, Endpoint{l.address, l.port})
 	}
+	groups := map[string]int{}
 	for _, c := range containers {
 		name := strings.TrimPrefix(first(c.Names), "/")
 		if name == "" {
@@ -58,35 +81,49 @@ func Scan(ctx context.Context) ([]Service, error) {
 			}
 		}
 		project := c.Labels["com.docker.compose.project"]
-		if len(c.Ports) == 0 {
-			services = append(services, Service{Name: name, Project: project, Process: "Docker"})
-			continue
+		key := "container:" + c.ID
+		if project != "" {
+			key = "compose:" + project
 		}
-		for _, p := range c.Ports {
-			if p.Type != "tcp" || p.PublicPort == 0 {
-				continue
+		i, ok := groups[key]
+		if !ok {
+			i = len(services)
+			groups[key] = i
+			title := name
+			if project != "" {
+				title = project
 			}
-			services = append(services, Service{Name: name, Address: p.IP, Port: p.PublicPort, Project: project, Process: "Docker"})
+			services = append(services, Service{Name: title, Process: "Docker"})
 		}
-		// Containers without published TCP ports still belong in the menu.
-		found := false
+		member := Container{ID: c.ID, Name: name}
 		for _, p := range c.Ports {
 			if p.Type == "tcp" && p.PublicPort != 0 {
-				found = true
-				break
+				member.Endpoints = addEndpoint(member.Endpoints, Endpoint{p.IP, p.PublicPort})
 			}
 		}
-		if !found {
-			services = append(services, Service{Name: name, Project: project, Process: "Docker"})
+		if project != "" {
+			services[i].Members = append(services[i].Members, member)
+		} else {
+			services[i].Endpoints = member.Endpoints
+			services[i].ContainerID = c.ID
 		}
 	}
 	sort.Slice(services, func(i, j int) bool {
 		if services[i].Name != services[j].Name {
 			return services[i].Name < services[j].Name
 		}
-		return services[i].Port < services[j].Port
+		return services[i].PID < services[j].PID
 	})
-	return services, nil
+	return services
+}
+
+func addEndpoint(endpoints []Endpoint, endpoint Endpoint) []Endpoint {
+	for _, e := range endpoints {
+		if e == endpoint {
+			return endpoints
+		}
+	}
+	return append(endpoints, endpoint)
 }
 
 func readListeners(proc string) ([]listener, error) {
@@ -150,8 +187,20 @@ func decodeAddress(hex string) string {
 	return net.IP(b).String()
 }
 
-func processOwners(proc string) map[string]Service {
-	owners := map[string]Service{}
+type process struct {
+	pid, parent int
+	start       uint64
+	cwd, name   string
+	args        []string
+}
+
+func processOwners(proc string, uid int) map[string]Service {
+	processes := readProcesses(proc, uid)
+	return associateSockets(proc, processes)
+}
+
+func readProcesses(proc string, uid int) map[int]process {
+	processes := map[int]process{}
 	entries, _ := os.ReadDir(proc)
 	for _, e := range entries {
 		pid, err := strconv.Atoi(e.Name())
@@ -159,6 +208,60 @@ func processOwners(proc string) map[string]Service {
 			continue
 		}
 		base := filepath.Join(proc, e.Name())
+		info, err := os.Stat(base)
+		if err != nil {
+			continue
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok || int(stat.Uid) != uid {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(base, "stat"))
+		if err != nil {
+			continue
+		}
+		end := strings.LastIndexByte(string(data), ')')
+		if end < 0 {
+			continue
+		}
+		fields := strings.Fields(string(data[end+1:]))
+		if len(fields) < 20 {
+			continue
+		}
+		parent, err := strconv.Atoi(fields[1])
+		if err != nil {
+			continue
+		}
+		start, err := strconv.ParseUint(fields[19], 10, 64)
+		if err != nil {
+			continue
+		}
+		cmd, err := os.ReadFile(filepath.Join(base, "cmdline"))
+		if err != nil {
+			continue
+		}
+		cwd, _ := os.Readlink(filepath.Join(base, "cwd"))
+		name, _ := os.ReadFile(filepath.Join(base, "comm"))
+		processes[pid] = process{pid: pid, parent: parent, start: start, cwd: cwd, name: strings.TrimSpace(string(name)), args: strings.Split(strings.TrimRight(string(cmd), "\x00"), "\x00")}
+	}
+	return processes
+}
+
+func associateSockets(proc string, processes map[int]process) map[string]Service {
+	type association struct {
+		pid        int
+		service    Service
+		recognized bool
+		shared     bool
+	}
+	sockets := map[string]association{}
+	for pid, p := range processes {
+		name, evidence, ok := recognized(p, processes)
+		service := Service{Name: name, PID: p.pid, Process: p.name, Project: evidence.cwd}
+		base := filepath.Join(proc, strconv.Itoa(pid))
+		if data, err := os.ReadFile(filepath.Join(base, "cgroup")); ok && err == nil {
+			service.ContainerID = dockerCgroupID(string(data))
+		}
 		fds, err := os.ReadDir(filepath.Join(base, "fd"))
 		if err != nil {
 			continue
@@ -169,15 +272,69 @@ func processOwners(proc string) map[string]Service {
 				continue
 			}
 			inode := strings.TrimSuffix(strings.TrimPrefix(target, "socket:["), "]")
-			if _, exists := owners[inode]; exists {
-				continue
+			existing, exists := sockets[inode]
+			if exists && existing.pid != pid {
+				existing.shared = true
+				sockets[inode] = existing
+			} else if !exists {
+				sockets[inode] = association{pid: pid, service: service, recognized: ok}
 			}
-			name, _ := os.ReadFile(filepath.Join(base, "comm"))
-			cwd, _ := os.Readlink(filepath.Join(base, "cwd"))
-			owners[inode] = Service{PID: pid, Process: strings.TrimSpace(string(name)), Project: cwd}
+		}
+	}
+	owners := map[string]Service{}
+	for inode, socket := range sockets {
+		if socket.recognized && !socket.shared {
+			owners[inode] = socket.service
 		}
 	}
 	return owners
+}
+
+func dockerCgroupID(cgroup string) string {
+	for _, line := range strings.Split(cgroup, "\n") {
+		fields := strings.SplitN(line, ":", 3)
+		if len(fields) != 3 {
+			continue
+		}
+		parts := strings.Split(fields[2], "/")
+		for i, part := range parts {
+			id := ""
+			if strings.HasPrefix(part, "docker-") && strings.HasSuffix(part, ".scope") {
+				id = strings.TrimSuffix(strings.TrimPrefix(part, "docker-"), ".scope")
+			}
+			if i > 0 && parts[i-1] == "docker" {
+				id = part
+			}
+			if len(id) != 64 {
+				continue
+			}
+			valid := true
+			for _, c := range id {
+				if !strings.ContainsRune("0123456789abcdef", c) {
+					valid = false
+					break
+				}
+			}
+			if valid {
+				return id
+			}
+		}
+	}
+	return ""
+}
+
+func recognized(p process, processes map[int]process) (string, process, bool) {
+	if name := catalog(p.args, p.cwd); name != "" {
+		return name, p, true
+	}
+	parent, ok := processes[p.parent]
+	if !ok || parent.pid == p.pid || parent.start > p.start || p.cwd == "" || p.cwd != parent.cwd {
+		return "", process{}, false
+	}
+	if name := catalog(parent.args, parent.cwd); name != "" {
+		return name, parent, true
+	}
+	return "", process{}, false
 }
 
 type container struct {
@@ -192,8 +349,24 @@ type container struct {
 }
 
 func docker(ctx context.Context) []container {
+	if host := os.Getenv("DOCKER_HOST"); host != "" {
+		if !strings.HasPrefix(host, "unix:///") {
+			return nil
+		}
+		return dockerAt(ctx, strings.TrimPrefix(host, "unix://"))
+	}
+	if runtime := os.Getenv("XDG_RUNTIME_DIR"); runtime != "" {
+		path := filepath.Join(runtime, "docker.sock")
+		if info, err := os.Stat(path); err == nil && info.Mode()&os.ModeSocket != 0 {
+			return dockerAt(ctx, path)
+		}
+	}
+	return dockerAt(ctx, "/var/run/docker.sock")
+}
+
+func dockerAt(ctx context.Context, socket string) []container {
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-		return (&net.Dialer{}).DialContext(ctx, "unix", "/var/run/docker.sock")
+		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
 	}}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 3 * time.Second}
@@ -221,32 +394,4 @@ func first(s []string) string {
 		return ""
 	}
 	return s[0]
-}
-
-func published(containers []container, l listener) bool {
-	for _, c := range containers {
-		for _, p := range c.Ports {
-			if p.Type == "tcp" && p.PublicPort == l.port && p.IP == l.address {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func (s Service) String() string {
-	parts := []string{s.Name}
-	if s.Port != 0 {
-		parts = append(parts, net.JoinHostPort(s.Address, strconv.Itoa(int(s.Port))))
-	}
-	if s.Process != "" && s.Process != s.Name {
-		parts = append(parts, s.Process)
-	}
-	if s.PID != 0 {
-		parts = append(parts, fmt.Sprintf("PID %d", s.PID))
-	}
-	if s.Project != "" {
-		parts = append(parts, s.Project)
-	}
-	return strings.Join(parts, " · ")
 }
