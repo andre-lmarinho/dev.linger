@@ -31,27 +31,33 @@ func TestMetrics(t *testing.T) {
 	var m Metrics
 	m.update(proc, services)
 	wantMemory := float64(512*os.Getpagesize()) / 1_000_000
-	if services[0].CPU != 0 || services[0].MemoryMB != wantMemory {
+	if services[0].CPUValid || !services[0].MemoryValid || services[0].MemoryMB != wantMemory {
 		t.Fatalf("first sample: %+v", services[0])
 	}
 	writeStat(1200, 30, 123)
 	m.update(proc, services)
-	if math.Abs(services[0].CPU-10*float64(runtime.NumCPU())) > 0.001 {
+	if !services[0].CPUValid || math.Abs(services[0].CPU-10*float64(runtime.NumCPU())) > 0.001 {
 		t.Fatalf("second sample: %+v", services[0])
+	}
+	writeStat(1300, 30, 123)
+	write("42/statm", "1000 0\n")
+	m.update(proc, services)
+	if !services[0].CPUValid || services[0].CPU != 0 || !services[0].MemoryValid || services[0].MemoryMB != 0 {
+		t.Fatalf("valid zero sample: %+v", services[0])
 	}
 	writeStat(1400, 40, 124)
 	m.update(proc, services)
-	if services[0].CPU != 0 || services[0].MemoryMB != 0 {
+	if services[0].CPUValid || services[0].MemoryValid {
 		t.Fatalf("reused pid: %+v", services[0])
 	}
 	services[0].start = 124
 	m.update(proc, services)
-	if services[0].CPU != 0 {
+	if services[0].CPUValid {
 		t.Fatal("new process used old CPU sample")
 	}
 }
 
-func TestDockerShowsHostMetrics(t *testing.T) {
+func TestDockerHasNoInventedMetrics(t *testing.T) {
 	proc := t.TempDir()
 	write := func(name, content string) {
 		t.Helper()
@@ -61,14 +67,14 @@ func TestDockerShowsHostMetrics(t *testing.T) {
 	}
 	write("meminfo", "MemTotal: 1000000 kB\nMemAvailable: 250000 kB\n")
 	write("stat", "cpu 100 0 0 900 0 0 0 0\ncpu0 100 0 0 900\n")
-	services := []Service{{Name: "demo", Docker: true, Members: []Service{{Name: "web"}, {Name: "db"}}}, {Name: "standalone", Docker: true}}
+	services := []Service{{Name: "demo", Docker: true, CPUValid: true, MemoryValid: true, Members: []Service{{Name: "web"}, {Name: "db"}}}, {Name: "standalone", Docker: true}}
 	var m Metrics
 	m.update(proc, services)
 	write("stat", "cpu 150 0 0 950 0 0 0 0\ncpu0 150 0 0 950\n")
 	m.update(proc, services)
 	for _, service := range services {
-		if service.CPU != 50 || service.MemoryMB != 768 {
-			t.Fatalf("host metrics for %s: %+v", service.Name, service)
+		if service.CPUValid || service.MemoryValid {
+			t.Fatalf("invented metrics for %s: %+v", service.Name, service)
 		}
 	}
 }

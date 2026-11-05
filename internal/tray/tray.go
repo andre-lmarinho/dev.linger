@@ -183,7 +183,18 @@ func childProperties(label string) map[string]dbus.Variant {
 }
 
 func formatService(s monitor.Service) string {
-	return fmt.Sprintf("%s\nCPU %.1f%% · Memory %.0f MB", formatServiceName(s), s.CPU, s.MemoryMB)
+	label := formatServiceName(s)
+	var metrics []string
+	if s.CPUValid {
+		metrics = append(metrics, fmt.Sprintf("CPU %.1f%%", s.CPU))
+	}
+	if s.MemoryValid {
+		metrics = append(metrics, fmt.Sprintf("Memory %.0f MB", s.MemoryMB))
+	}
+	if len(metrics) > 0 {
+		label += "\n" + strings.Join(metrics, " · ")
+	}
+	return label
 }
 
 func formatServiceName(s monitor.Service) string {

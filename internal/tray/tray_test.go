@@ -15,13 +15,24 @@ func (watcher) RegisterStatusNotifierItem(string) *dbus.Error { return nil }
 
 func TestFormatServiceCompact(t *testing.T) {
 	s := monitor.Service{Name: "Vite", Project: "/home/user/shop", PID: 42, Branch: "main", Uptime: 20 * time.Minute, Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}, {Address: "::1", Port: 3000}}}
-	if got := formatService(s); got != "shop · Vite · :3000 · main · 20m\nCPU 0.0% · Memory 0 MB" {
+	if got := formatService(s); got != "shop · Vite · :3000 · main · 20m" {
+		t.Fatal(got)
+	}
+}
+
+func TestFormatAvailableMetrics(t *testing.T) {
+	s := monitor.Service{Name: "Vite", CPUValid: true, MemoryValid: true}
+	if got := formatService(s); got != "Vite\nCPU 0.0% · Memory 0 MB" {
+		t.Fatal(got)
+	}
+	s.CPUValid = false
+	if got := formatService(s); got != "Vite\nMemory 0 MB" {
 		t.Fatal(got)
 	}
 }
 
 func TestServiceSubmenu(t *testing.T) {
-	tray := &Tray{services: []monitor.Service{{Name: "Vite", CPU: 1, MemoryMB: 2, Members: []monitor.Service{{Name: "HMR", CPU: 1, MemoryMB: 2}}}}}
+	tray := &Tray{services: []monitor.Service{{Name: "Vite", CPU: 1, MemoryMB: 2, CPUValid: true, MemoryValid: true, Members: []monitor.Service{{Name: "HMR", CPU: 1, MemoryMB: 2}}}}}
 	items := tray.items()
 	if items[1].Properties["label"].Value() != "Vite\nCPU 1.0% · Memory 2 MB\n1 sub-service" || items[1].Properties["enabled"].Value() != true || len(items[1].Children) != 1 {
 		t.Fatalf("unexpected service submenu: %#v", items[1])
@@ -33,13 +44,13 @@ func TestServiceSubmenu(t *testing.T) {
 }
 
 func TestComposeMenu(t *testing.T) {
-	tray := &Tray{services: []monitor.Service{{Name: "demo", Docker: true, CPU: 12, MemoryMB: 300, Members: []monitor.Service{{Name: "web", Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}}}, {Name: "db"}}}}}
+	tray := &Tray{services: []monitor.Service{{Name: "demo", Docker: true, Members: []monitor.Service{{Name: "web", Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}}}, {Name: "db"}}}}}
 	_, root, err := tray.GetLayout(0, -1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	project := root.Children[1].Value().(layout)
-	if project.Properties["label"].Value() != "demo · Docker\nCPU 12.0% · Memory 300 MB\n2 containers" || project.Properties["enabled"].Value() != true || project.Properties["toggle-type"].Value() != "radio" || len(project.Children) != 2 {
+	if project.Properties["label"].Value() != "demo · Docker\n2 containers" || project.Properties["enabled"].Value() != true || project.Properties["toggle-type"].Value() != "radio" || len(project.Children) != 2 {
 		t.Fatalf("unexpected project: %#v", project)
 	}
 	web := project.Children[0].Value().(layout)

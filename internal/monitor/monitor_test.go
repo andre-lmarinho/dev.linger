@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestReadListeners(t *testing.T) {
@@ -202,6 +201,12 @@ func TestGitBranch(t *testing.T) {
 	if got := gitBranch(dir); got != "feature/menu" {
 		t.Fatal(got)
 	}
+	if err := os.MkdirAll(filepath.Join(dir, "app", "server"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if got := gitBranch(filepath.Join(dir, "app", "server")); got != "feature/menu" {
+		t.Fatal(got)
+	}
 }
 
 func TestAncestorAndListeners(t *testing.T) {
@@ -269,9 +274,8 @@ func TestDescendantSocketOwnersRemainSeparate(t *testing.T) {
 }
 
 func TestDockerGroups(t *testing.T) {
-	now := time.Now()
-	a := container{ID: "a", Names: []string{"/web"}, Created: now.Add(-time.Hour).Unix(), Labels: map[string]string{"com.docker.compose.project": "demo"}}
-	b := container{ID: "b", Names: []string{"/db"}, Created: now.Add(-2 * time.Hour).Unix(), Labels: map[string]string{"com.docker.compose.project": "demo"}}
+	a := container{ID: "a", Names: []string{"/web"}, Labels: map[string]string{"com.docker.compose.project": "demo"}}
+	b := container{ID: "b", Names: []string{"/db"}, Labels: map[string]string{"com.docker.compose.project": "demo"}}
 	c := container{ID: "c", Names: []string{"/independent"}}
 	a.Ports = append(a.Ports, struct {
 		IP         string `json:"IP"`
@@ -279,7 +283,7 @@ func TestDockerGroups(t *testing.T) {
 		Type       string `json:"Type"`
 	}{"127.0.0.1", 3000, "tcp"})
 	got := collect(nil, nil, []container{a, b, c})
-	if len(got) != 2 || got[0].Name != "demo" || got[0].Uptime < 2*time.Hour || got[0].Uptime >= 2*time.Hour+time.Minute || len(got[0].Members) != 2 || got[0].Members[0].ContainerID != "a" || got[0].Members[0].Name != "web" || len(got[0].Members[0].Endpoints) != 1 || got[0].Members[1].ContainerID != "b" || got[0].Members[1].Name != "db" || got[1].ContainerID != "c" || got[1].Name != "independent" {
+	if len(got) != 2 || got[0].Name != "demo" || got[0].Uptime != 0 || len(got[0].Members) != 2 || got[0].Members[0].ContainerID != "a" || got[0].Members[0].Name != "web" || len(got[0].Members[0].Endpoints) != 1 || got[0].Members[1].ContainerID != "b" || got[0].Members[1].Name != "db" || got[1].ContainerID != "c" || got[1].Name != "independent" {
 		t.Fatalf("unexpected containers: %#v", got)
 	}
 	if got := collect(nil, nil, nil); len(got) != 0 {
