@@ -14,8 +14,6 @@ type signature struct {
 	commands       []string
 	defaultCommand bool
 	requireValue   bool
-	valueOptions   []string
-	flags          []string
 }
 
 var developmentEntrypoints = []signature{
@@ -35,10 +33,10 @@ var developmentEntrypoints = []signature{
 	{name: "Python HTTP server", executables: []string{"python", "python3", "python3.*"}, arguments: []string{"-m", "http.server"}},
 	{name: "Django", executables: []string{"python", "python3", "python3.*"}, arguments: []string{"-m", "django", "runserver"}},
 	{entrypoint: "/manage.py", name: "Django", executables: []string{"python", "python3", "python3.*"}, commands: []string{"runserver"}},
-	{name: "Flask", executables: []string{"python", "python3", "python3.*"}, arguments: []string{"-m", "flask"}, commands: []string{"run"}, valueOptions: []string{"--app", "-A", "--env-file"}, flags: []string{"--debug", "--no-debug"}},
-	{entrypoint: "/bin/flask", name: "Flask", executables: []string{"python", "python3", "python3.*"}, commands: []string{"run"}, valueOptions: []string{"--app", "-A", "--env-file"}, flags: []string{"--debug", "--no-debug"}},
-	{name: "Uvicorn", executables: []string{"python", "python3", "python3.*"}, arguments: []string{"-m", "uvicorn"}, requireValue: true, valueOptions: []string{"--host", "--port", "--app-dir"}, flags: []string{"--reload"}},
-	{entrypoint: "/bin/uvicorn", name: "Uvicorn", executables: []string{"python", "python3", "python3.*"}, requireValue: true, valueOptions: []string{"--host", "--port", "--app-dir"}, flags: []string{"--reload"}},
+	{name: "Flask", executables: []string{"python", "python3", "python3.*"}, arguments: []string{"-m", "flask"}, commands: []string{"run"}},
+	{entrypoint: "/bin/flask", name: "Flask", executables: []string{"python", "python3", "python3.*"}, commands: []string{"run"}},
+	{name: "Uvicorn", executables: []string{"python", "python3", "python3.*"}, arguments: []string{"-m", "uvicorn"}, requireValue: true},
+	{entrypoint: "/bin/uvicorn", name: "Uvicorn", executables: []string{"python", "python3", "python3.*"}, requireValue: true},
 	{name: "Gunicorn", executables: []string{"python", "python3", "python3.*"}, arguments: []string{"-m", "gunicorn"}, requireValue: true},
 	{entrypoint: "/bin/gunicorn", name: "Gunicorn", executables: []string{"python", "python3", "python3.*"}, requireValue: true},
 	{name: "PHP server", executables: []string{"php"}, arguments: []string{"-S"}, requireValue: true},
@@ -90,23 +88,6 @@ func matchCatalog(args []string, cwd string, entries []signature) string {
 		}
 		if slices.Contains(beforeSeparator, "--help") || slices.Contains(beforeSeparator, "--version") {
 			continue
-		}
-		for i < len(args) {
-			if slices.Contains(entry.flags, args[i]) {
-				i++
-				continue
-			}
-			option, value, hasValue := strings.Cut(args[i], "=")
-			if !slices.Contains(entry.valueOptions, option) {
-				break
-			}
-			if hasValue && value != "" {
-				i++
-			} else if !hasValue && i+1 < len(args) && args[i+1] != "" && !strings.HasPrefix(args[i+1], "-") {
-				i += 2
-			} else {
-				break
-			}
 		}
 		if entry.requireValue && (i >= len(args) || args[i] == "" || strings.HasPrefix(args[i], "-")) {
 			continue

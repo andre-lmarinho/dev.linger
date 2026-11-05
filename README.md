@@ -25,7 +25,7 @@ DevLinger recognizes explicit development commands for Next.js, Astro, Vite, Nux
 
 Detection is limited to the entry points and argument order in `internal/monitor/catalog.go`. Package layouts, custom interpreter names, unsupported options before the server command and detached processes can prevent detection. Vite-based SvelteKit is identified as Vite, not SvelteKit. Laravel, Rails, Phoenix, Go, Rust, Spring Boot and ASP.NET Core are not recognized by their generic runtimes alone. Gunicorn signatures exist, but its usual master/worker processes share a socket, which is currently omitted. Other shared sockets are also omitted rather than assigned to an arbitrary owner. Docker containers are listed even without published ports; Docker is optional.
 
-For Uvicorn, `--host`, `--port`, `--app-dir` and `--reload` are recognized before the application argument. Other options in that position may prevent detection.
+Flask options before `run` and Uvicorn or Gunicorn options before the application argument prevent detection. For example, use `FLASK_APP=hello python -m flask run` or `python -m uvicorn app:app --host 127.0.0.1`.
 
 Docker discovery uses an absolute Unix `DOCKER_HOST` if set, otherwise `$XDG_RUNTIME_DIR/docker.sock` if present, or `/var/run/docker.sock`. An inaccessible selected socket does not trigger a fallback. Remote hosts and Docker CLI contexts are not supported. Docker/local duplicates are suppressed only when cgroup metadata identifies the container.
 
