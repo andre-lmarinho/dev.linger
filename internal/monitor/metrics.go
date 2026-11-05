@@ -1,0 +1,136 @@
+package monitor
+
+import (
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+)
+
+type cpuSample struct {
+	start, ticks uint64
+}
+
+// Metrics retains only the previous CPU counters needed for the next sample.
+type Metrics struct {
+	total     uint64
+	idle      uint64
+	processes map[int]cpuSample
+}
+
+func (m *Metrics) Update(services []Service) {
+	m.update("/proc", services)
+}
+
+func (m *Metrics) update(proc string, services []Service) {
+	data, err := os.ReadFile(filepath.Join(proc, "stat"))
+	var total uint64
+	var idle uint64
+	var cores int
+	if err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) == 0 {
+				continue
+			}
+			if fields[0] == "cpu" && len(fields) >= 5 {
+				// Guest time is already included in user and nice.
+				for i, field := range fields[1:min(len(fields), 9)] {
+					value, parseErr := strconv.ParseUint(field, 10, 64)
+					if parseErr != nil {
+						total = 0
+						idle = 0
+						break
+					}
+					total += value
+					if i == 3 || i == 4 {
+						idle += value
+					}
+				}
+			} else if strings.HasPrefix(fields[0], "cpu") {
+				if _, err := strconv.Atoi(strings.TrimPrefix(fields[0], "cpu")); err == nil {
+					cores++
+				}
+			}
+		}
+	}
+	hostCPU, hostMemory := 0.0, 0.0
+	if m.total != 0 && total > m.total && idle >= m.idle && idle-m.idle <= total-m.total {
+		hostCPU = 100 * float64((total-m.total)-(idle-m.idle)) / float64(total-m.total)
+	}
+	if meminfo, err := os.ReadFile(filepath.Join(proc, "meminfo")); err == nil {
+		var memoryTotal, available uint64
+		var haveTotal, haveAvailable bool
+		for _, line := range strings.Split(string(meminfo), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) != 3 || fields[2] != "kB" {
+				continue
+			}
+			value, err := strconv.ParseUint(fields[1], 10, 64)
+			if err != nil {
+				continue
+			}
+			switch fields[0] {
+			case "MemTotal:":
+				memoryTotal, haveTotal = value, true
+			case "MemAvailable:":
+				available, haveAvailable = value, true
+			}
+		}
+		if haveTotal && haveAvailable && memoryTotal >= available {
+			hostMemory = float64(memoryTotal-available) * 1024 / 1_000_000
+		}
+	}
+	next := make(map[int]cpuSample)
+	for i := range services {
+		s := &services[i]
+		if s.Process == "Docker" {
+			s.CPU, s.MemoryMB = &hostCPU, &hostMemory
+			continue
+		}
+		cpu, memory := 0.0, 0.0
+		s.CPU, s.MemoryMB = &cpu, &memory
+		if s.PID <= 0 {
+			continue
+		}
+		base := filepath.Join(proc, strconv.Itoa(s.PID))
+		stat, err := os.ReadFile(filepath.Join(base, "stat"))
+		if err != nil {
+			continue
+		}
+		end := strings.LastIndexByte(string(stat), ')')
+		if end < 0 {
+			continue
+		}
+		fields := strings.Fields(string(stat[end+1:]))
+		if len(fields) < 20 {
+			continue
+		}
+		user, e1 := strconv.ParseUint(fields[11], 10, 64)
+		system, e2 := strconv.ParseUint(fields[12], 10, 64)
+		start, e3 := strconv.ParseUint(fields[19], 10, 64)
+		if e1 != nil || e2 != nil || e3 != nil || start != s.start {
+			continue
+		}
+		current := cpuSample{start: start, ticks: user + system}
+		next[s.PID] = current
+		if previous, ok := m.processes[s.PID]; ok && previous.start == start && current.ticks >= previous.ticks && total > m.total && m.total != 0 && cores > 0 {
+			cpu := float64(current.ticks-previous.ticks) / float64(total-m.total) * float64(cores) * 100
+			s.CPU = &cpu
+		}
+		status, err := os.ReadFile(filepath.Join(base, "status"))
+		if err == nil {
+			for _, line := range strings.Split(string(status), "\n") {
+				fields := strings.Fields(line)
+				if len(fields) == 3 && fields[0] == "VmRSS:" && fields[2] == "kB" {
+					if kb, err := strconv.ParseUint(fields[1], 10, 64); err == nil {
+						mb := float64(kb) * 1024 / 1_000_000
+						s.MemoryMB = &mb
+					}
+					break
+				}
+			}
+		}
+	}
+	m.total, m.idle, m.processes = total, idle, next
+}

@@ -21,6 +21,10 @@ type Service struct {
 	PID                    int
 	Endpoints              []Endpoint
 	Members                []Container
+	Subservices            []Service
+	CPU                    *float64
+	MemoryMB               *float64
+	start                  uint64
 }
 
 type Container struct {
@@ -257,7 +261,7 @@ func associateSockets(proc string, processes map[int]process) map[string]Service
 	sockets := map[string]association{}
 	for pid, p := range processes {
 		name, evidence, ok := recognized(p, processes)
-		service := Service{Name: name, PID: p.pid, Process: p.name, Project: evidence.cwd}
+		service := Service{Name: name, PID: p.pid, Process: p.name, Project: evidence.cwd, start: p.start}
 		base := filepath.Join(proc, strconv.Itoa(pid))
 		if data, err := os.ReadFile(filepath.Join(base, "cgroup")); ok && err == nil {
 			service.ContainerID = dockerCgroupID(string(data))

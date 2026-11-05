@@ -19,6 +19,8 @@ go build -o devlinger .
 
 The tray menu refreshes every 10 seconds. Select **Quit** to exit.
 
+The menu shows CPU and memory on top-level services, using zero until a measurement is available; container and sub-service entries do not show metrics. Local services show process CPU and resident memory; process CPU can exceed 100% when multiple cores are used. Docker entries show total host CPU and used memory, not container usage. Host memory used is total memory minus available memory. CPU is calculated between scans.
+
 ## Detection
 
 DevLinger recognizes explicit development commands for Next.js, Astro, Vite, Nuxt, Angular, NestJS, Remix, Storybook and Expo; Python HTTP Server, Django, Flask and Uvicorn; and PHP's built-in server. Docker Compose containers are grouped by project. Listeners are grouped by their owning process; a direct parent's command can provide evidence when both share a working directory. Unknown processes are omitted, not assumed irrelevant.

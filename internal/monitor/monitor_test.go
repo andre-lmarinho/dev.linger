@@ -331,11 +331,16 @@ func TestDockerUnixSockets(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "GET" || r.URL.Path != "/containers/json" {
+		if r.Method != "GET" {
 			http.Error(w, "unexpected request", http.StatusNotFound)
 			return
 		}
-		fmt.Fprint(w, `[{"Id":"abc","Names":["/web"],"Labels":{"com.docker.compose.project":"demo"},"Ports":[{"IP":"127.0.0.1","PublicPort":3000,"Type":"tcp"}]}]`)
+		switch r.URL.Path {
+		case "/containers/json":
+			fmt.Fprint(w, `[{"Id":"abc","Names":["/web"],"Labels":{"com.docker.compose.project":"demo"},"Ports":[{"IP":"127.0.0.1","PublicPort":3000,"Type":"tcp"}]}]`)
+		default:
+			http.Error(w, "unexpected request", http.StatusNotFound)
+		}
 	})}
 	go server.Serve(listener)
 	t.Cleanup(func() { server.Close() })

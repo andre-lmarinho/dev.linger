@@ -140,22 +140,33 @@ func (t *Tray) items() []layout {
 	}
 	childID := int32(len(t.services) + 10)
 	for i, s := range t.services {
-		item := layout{ID: int32(i + 10), Properties: map[string]dbus.Variant{"label": dbus.MakeVariant(formatService(s)), "enabled": dbus.MakeVariant(false)}, Children: []dbus.Variant{}}
+		item := layout{ID: int32(i + 10), Properties: serviceProperties(formatService(s)), Children: []dbus.Variant{}}
 		if len(s.Members) > 0 {
 			label := "containers"
 			if len(s.Members) == 1 {
 				label = "container"
 			}
-			item.Properties = map[string]dbus.Variant{"label": dbus.MakeVariant(fmt.Sprintf("%s · %d %s", formatService(s), len(s.Members), label)), "children-display": dbus.MakeVariant("submenu")}
+			item.Properties = serviceProperties(fmt.Sprintf("%s\n%d %s", formatService(s), len(s.Members), label))
+			item.Properties["children-display"] = dbus.MakeVariant("submenu")
+			item.Properties["enabled"] = dbus.MakeVariant(true)
 			for _, member := range s.Members {
-				child := layout{ID: childID, Properties: map[string]dbus.Variant{"label": dbus.MakeVariant(formatService(monitor.Service{Name: member.Name, Endpoints: member.Endpoints})), "enabled": dbus.MakeVariant(false)}, Children: []dbus.Variant{}}
+				child := layout{ID: childID, Properties: serviceProperties(formatServiceName(monitor.Service{Name: member.Name, Endpoints: member.Endpoints})), Children: []dbus.Variant{}}
+				item.Children = append(item.Children, dbus.MakeVariant(child))
+				childID++
+			}
+		} else if len(s.Subservices) > 0 {
+			item.Properties = serviceProperties(fmt.Sprintf("%s\n%d sub-services", formatService(s), len(s.Subservices)))
+			item.Properties["children-display"] = dbus.MakeVariant("submenu")
+			item.Properties["enabled"] = dbus.MakeVariant(true)
+			for _, subservice := range s.Subservices {
+				child := layout{ID: childID, Properties: serviceProperties(formatServiceName(subservice)), Children: []dbus.Variant{}}
 				item.Children = append(item.Children, dbus.MakeVariant(child))
 				childID++
 			}
 		}
 		items = append(items, item)
 	}
-	items = append(items, layout{ID: 3, Properties: map[string]dbus.Variant{"type": dbus.MakeVariant("separator")}}, layout{ID: 4, Properties: map[string]dbus.Variant{"label": dbus.MakeVariant("Quit")}})
+	items = append(items, layout{ID: 4, Properties: map[string]dbus.Variant{"label": dbus.MakeVariant("Quit")}})
 	for i := range items {
 		if items[i].Children == nil {
 			items[i].Children = []dbus.Variant{}
@@ -164,7 +175,27 @@ func (t *Tray) items() []layout {
 	return items
 }
 
+func serviceProperties(label string) map[string]dbus.Variant {
+	return map[string]dbus.Variant{
+		"label":        dbus.MakeVariant(label),
+		"enabled":      dbus.MakeVariant(false),
+		"toggle-type":  dbus.MakeVariant("radio"),
+		"toggle-state": dbus.MakeVariant(int32(1)),
+	}
+}
+
 func formatService(s monitor.Service) string {
+	cpu, memory := 0.0, 0.0
+	if s.CPU != nil {
+		cpu = *s.CPU
+	}
+	if s.MemoryMB != nil {
+		memory = *s.MemoryMB
+	}
+	return fmt.Sprintf("%s\nCPU %.1f%% · Memory %.1f MB", formatServiceName(s), cpu, memory)
+}
+
+func formatServiceName(s monitor.Service) string {
 	var parts []string
 	if s.Project != "" {
 		parts = append(parts, filepath.Base(s.Project))
