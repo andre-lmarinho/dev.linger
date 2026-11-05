@@ -74,7 +74,25 @@ func TestMenuOverDBus(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer tray.Close()
+	icon := func() []pixmap {
+		t.Helper()
+		var value dbus.Variant
+		if err := conn.Object(tray.conn.Names()[0], itemPath).Call("org.freedesktop.DBus.Properties.Get", 0, "org.kde.StatusNotifierItem", "IconPixmap").Store(&value); err != nil {
+			t.Fatal(err)
+		}
+		var images []pixmap
+		if err := dbus.Store([]interface{}{value.Value()}, &images); err != nil {
+			t.Fatal(err)
+		}
+		return images
+	}
+	if got := icon()[0].Data; got[(3*16+2)*4] != 160 {
+		t.Fatal("initial icon is not dimmed")
+	}
 	tray.Update([]monitor.Service{{Name: "node", Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}}}, {Name: "demo", Process: "Docker", Members: []monitor.Container{{Name: "web"}}}}, nil)
+	if got := icon()[0].Data; got[(3*16+2)*4] != 255 {
+		t.Fatal("active icon is not bright")
+	}
 	var revision uint32
 	var menu layout
 	err = conn.Object(tray.conn.Names()[0], menuPath).Call("com.canonical.dbusmenu.GetLayout", 0, int32(0), int32(-1), []string{}).Store(&revision, &menu)
@@ -87,5 +105,9 @@ func TestMenuOverDBus(t *testing.T) {
 	err = conn.Object(tray.conn.Names()[0], menuPath).Call("com.canonical.dbusmenu.GetLayout", 0, int32(11), int32(1), []string{}).Store(&revision, &menu)
 	if err != nil || len(menu.Children) != 1 {
 		t.Fatalf("submenu: %#v %v", menu, err)
+	}
+	tray.Update(nil, nil)
+	if got := icon()[0].Data; got[(3*16+2)*4] != 160 {
+		t.Fatal("empty icon is not dimmed")
 	}
 }

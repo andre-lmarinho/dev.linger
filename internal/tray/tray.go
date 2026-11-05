@@ -67,22 +67,10 @@ func New() (*Tray, error) {
 	if err = conn.Export(t, menuPath, "com.canonical.dbusmenu"); err != nil {
 		return fail(err)
 	}
-	icon := make([]byte, 16*16*4)
-	for y := 0; y < 16; y++ {
-		for x := 0; x < 16; x++ {
-			if x >= 2 && x <= 13 && y >= 3 && y <= 12 {
-				i := (y*16 + x) * 4
-				icon[i], icon[i+1], icon[i+2], icon[i+3] = 255, 62, 185, 155
-				if y == 6 || y == 9 {
-					icon[i+1], icon[i+2], icon[i+3] = 235, 255, 250
-				}
-			}
-		}
-	}
 	t.props, err = prop.Export(conn, itemPath, map[string]map[string]*prop.Prop{"org.kde.StatusNotifierItem": {
 		"Category": {Value: "ApplicationStatus", Emit: prop.EmitFalse}, "Id": {Value: "devlinger", Emit: prop.EmitFalse},
 		"Title": {Value: "DevLinger", Emit: prop.EmitTrue}, "Status": {Value: "Active", Emit: prop.EmitFalse},
-		"IconName": {Value: "", Emit: prop.EmitFalse}, "IconPixmap": {Value: []pixmap{{16, 16, icon}}, Emit: prop.EmitFalse},
+		"IconName": {Value: "", Emit: prop.EmitFalse}, "IconPixmap": {Value: trayIcon(false), Emit: prop.EmitFalse},
 		"Menu": {Value: menuPath, Emit: prop.EmitFalse}, "ItemIsMenu": {Value: true, Emit: prop.EmitFalse},
 	}})
 	if err != nil {
@@ -102,6 +90,25 @@ func New() (*Tray, error) {
 	return t, nil
 }
 
+func trayIcon(active bool) []pixmap {
+	icon := make([]byte, 16*16*4)
+	for y := 0; y < 16; y++ {
+		for x := 0; x < 16; x++ {
+			if x >= 2 && x <= 13 && y >= 3 && y <= 12 {
+				i := (y*16 + x) * 4
+				icon[i], icon[i+1], icon[i+2], icon[i+3] = 255, 62, 185, 155
+				if !active {
+					icon[i], icon[i+1], icon[i+2], icon[i+3] = 160, 140, 140, 140
+				}
+				if y == 6 || y == 9 {
+					icon[i+1], icon[i+2], icon[i+3] = 235, 255, 250
+				}
+			}
+		}
+	}
+	return []pixmap{{16, 16, icon}}
+}
+
 func (t *Tray) Update(services []monitor.Service, scanErr error) {
 	t.mu.Lock()
 	t.services = append([]monitor.Service(nil), services...)
@@ -112,6 +119,8 @@ func (t *Tray) Update(services []monitor.Service, scanErr error) {
 	rev := t.revision
 	t.mu.Unlock()
 	t.props.SetMust("org.kde.StatusNotifierItem", "Title", fmt.Sprintf("DevLinger — %d services", len(services)))
+	t.props.SetMust("org.kde.StatusNotifierItem", "IconPixmap", trayIcon(scanErr != nil || len(services) > 0))
+	t.conn.Emit(itemPath, "org.kde.StatusNotifierItem.NewIcon")
 	t.conn.Emit(itemPath, "org.kde.StatusNotifierItem.NewTitle")
 	t.conn.Emit(menuPath, "com.canonical.dbusmenu.LayoutUpdated", rev, int32(0))
 }
