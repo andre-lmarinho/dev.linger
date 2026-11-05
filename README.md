@@ -21,9 +21,11 @@ The tray menu refreshes every 10 seconds. Select **Quit** to exit.
 
 ## Detection
 
-DevLinger recognizes Next.js, Astro and Vite development commands and groups Docker Compose containers by project. It groups listeners by their owning process and can use a direct parent's command as evidence when both have the same working directory. Unknown processes are omitted, not assumed irrelevant.
+DevLinger recognizes explicit development commands for Next.js, Astro, Vite, Nuxt, Angular, NestJS, Remix, Storybook and Expo; Python HTTP Server, Django, Flask and Uvicorn; and PHP's built-in server. Docker Compose containers are grouped by project. Listeners are grouped by their owning process; a direct parent's command can provide evidence when both share a working directory. Unknown processes are omitted, not assumed irrelevant.
 
-Detection is limited to the entry points in `internal/monitor/catalog.go`. Other stacks, runtimes, package layouts and detached processes may be missed. A direct child of a recognized command can be shown even if it is unrelated. Sockets shared by multiple accessible processes are omitted rather than assigned to an arbitrary owner. Docker containers are listed even without published ports; Docker is optional.
+Detection is limited to the entry points and argument order in `internal/monitor/catalog.go`. Package layouts, custom interpreter names, unsupported options before the server command and detached processes can prevent detection. Vite-based SvelteKit is identified as Vite, not SvelteKit. Laravel, Rails, Phoenix, Go, Rust, Spring Boot and ASP.NET Core are not recognized by their generic runtimes alone. Gunicorn signatures exist, but its usual master/worker processes share a socket, which is currently omitted. Other shared sockets are also omitted rather than assigned to an arbitrary owner. Docker containers are listed even without published ports; Docker is optional.
+
+For Uvicorn, `--host`, `--port`, `--app-dir` and `--reload` are recognized before the application argument. Other options in that position may prevent detection.
 
 Docker discovery uses an absolute Unix `DOCKER_HOST` if set, otherwise `$XDG_RUNTIME_DIR/docker.sock` if present, or `/var/run/docker.sock`. An inaccessible selected socket does not trigger a fallback. Remote hosts and Docker CLI contexts are not supported. Docker/local duplicates are suppressed only when cgroup metadata identifies the container.
 

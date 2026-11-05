@@ -61,6 +61,75 @@ func TestCatalog(t *testing.T) {
 	}
 }
 
+func TestExpandedCatalog(t *testing.T) {
+	tests := []struct {
+		args []string
+		want string
+	}{
+		{[]string{"node", "/project/node_modules/nuxt/bin/nuxt.mjs", "dev"}, "Nuxt"},
+		{[]string{"node", "/project/node_modules/nuxi/bin/nuxi.mjs", "dev"}, "Nuxt"},
+		{[]string{"node", "/project/node_modules/@nuxt/cli/bin/nuxi.mjs", "dev"}, "Nuxt"},
+		{[]string{"node", "/project/node_modules/@angular/cli/bin/ng.js", "serve"}, "Angular"},
+		{[]string{"node", "/project/node_modules/@nestjs/cli/bin/nest.js", "start"}, "NestJS"},
+		{[]string{"node", "/project/node_modules/@remix-run/dev/dist/cli.js", "dev"}, "Remix"},
+		{[]string{"node", "/project/node_modules/storybook/dist/bin/dispatcher.js", "dev"}, "Storybook"},
+		{[]string{"node", "/project/node_modules/@storybook/cli/dist/bin/index.js", "dev"}, "Storybook"},
+		{[]string{"node", "/project/node_modules/expo/bin/cli", "start"}, "Expo"},
+		{[]string{"python3", "-m", "http.server", "8000"}, "Python HTTP server"},
+		{[]string{"python3", "-m", "django", "runserver"}, "Django"},
+		{[]string{"python", "manage.py", "runserver"}, "Django"},
+		{[]string{"python3", "-m", "flask", "run"}, "Flask"},
+		{[]string{"python3.12", "-m", "flask", "--app", "hello", "--debug", "run"}, "Flask"},
+		{[]string{"python3", "/venv/bin/flask", "--app=hello", "run"}, "Flask"},
+		{[]string{"python3.12", "-m", "http.server", "8000"}, "Python HTTP server"},
+		{[]string{"/usr/bin/python3.13", "-m", "http.server", "8000"}, "Python HTTP server"},
+		{[]string{"python3", "/venv/bin/flask", "run"}, "Flask"},
+		{[]string{"python3", "-m", "uvicorn", "main:app"}, "Uvicorn"},
+		{[]string{"python3.12", "-m", "uvicorn", "--host", "127.0.0.1", "--port=8000", "app:app"}, "Uvicorn"},
+		{[]string{"python3", "/venv/bin/uvicorn", "--reload", "--host", "127.0.0.1", "app:app"}, "Uvicorn"},
+		{[]string{"python3", "/venv/bin/uvicorn", "main:app"}, "Uvicorn"},
+		{[]string{"python3", "-m", "gunicorn", "main:app"}, "Gunicorn"},
+		{[]string{"python3", "/venv/bin/gunicorn", "main:app"}, "Gunicorn"},
+		{[]string{"php", "-S", "127.0.0.1:8000"}, "PHP server"},
+		{[]string{"node", "/project/node_modules/nuxt/bin/nuxt.mjs", "build"}, ""},
+		{[]string{"node", "/project/node_modules/next/dist/bin/next", "build"}, ""},
+		{[]string{"node", "/project/node_modules/next/dist/bin/next"}, ""},
+		{[]string{"node", "/project/node_modules/next/dist/bin/next", "--version"}, ""},
+		{[]string{"node", "/project/node_modules/next/dist/bin/next", "dev", "--help"}, ""},
+		{[]string{"node", "/project/node_modules/storybook/dist/bin/dispatcher.js", "dev", "--help"}, ""},
+		{[]string{"node", "/project/node_modules/vite/bin/vite.js", "--host", "--version"}, ""},
+		{[]string{"node", "/project/node_modules/@nuxt/cli/bin/nuxi.mjs", "build"}, ""},
+		{[]string{"node", "/project/node_modules/@angular/cli/bin/ng.js", "test"}, ""},
+		{[]string{"node", "/project/node_modules/@nestjs/cli/bin/nest.js", "build"}, ""},
+		{[]string{"node", "/project/node_modules/@remix-run/dev/dist/cli.js", "build"}, ""},
+		{[]string{"node", "/project/node_modules/storybook/dist/bin/dispatcher.js", "build"}, ""},
+		{[]string{"node", "/project/node_modules/expo/bin/cli", "export"}, ""},
+		{[]string{"python3", "manage.py", "test"}, ""},
+		{[]string{"python3", "-m", "flask", "shell"}, ""},
+		{[]string{"python3", "-m", "flask", "--app", "hello", "shell"}, ""},
+		{[]string{"python3", "-m", "flask", "--app=", "run"}, ""},
+		{[]string{"python3", "-m", "flask", "--app", "run"}, ""},
+		{[]string{"python3", "-m", "http.server", "--help"}, ""},
+		{[]string{"node", "/project/node_modules/vite/bin/vite.js", "--help"}, ""},
+		{[]string{"python3", "-m", "uvicorn", "--help"}, ""},
+		{[]string{"python3", "-m", "uvicorn"}, ""},
+		{[]string{"python3", "-m", "uvicorn", "--host", "127.0.0.1"}, ""},
+		{[]string{"python3", "-m", "uvicorn", "--host", "--port", "8000", "app:app"}, ""},
+		{[]string{"python3", "-m", "uvicorn", "--host=", "app:app"}, ""},
+		{[]string{"python3", "-m", "uvicorn", "--unknown", "x", "app:app"}, ""},
+		{[]string{"python3", "-m", "uvicorn", "app:app", "--help"}, ""},
+		{[]string{"python3", "/venv/bin/gunicorn", "--version"}, ""},
+		{[]string{"php", "-S"}, ""},
+		{[]string{"go", "run", "."}, ""},
+		{[]string{"cargo", "run"}, ""},
+	}
+	for _, tt := range tests {
+		if got := catalog(tt.args, "/project"); got != tt.want {
+			t.Errorf("%v: got %q want %q", tt.args, got, tt.want)
+		}
+	}
+}
+
 func TestCatalogOtherRuntimes(t *testing.T) {
 	entries := []signature{
 		{name: "Python", executables: []string{"python3"}, arguments: []string{"-m", "http.server"}},
@@ -124,6 +193,31 @@ func TestSymlinkedEntrypoint(t *testing.T) {
 	}
 	if got := catalog([]string{"node", filepath.Join(bin, "next"), "dev"}, dir); got != "Next.js" {
 		t.Fatal(got)
+	}
+}
+
+func TestPackageManagerEntrypoints(t *testing.T) {
+	for _, layout := range []string{"node_modules", "node_modules/.pnpm/nuxt@4/node_modules"} {
+		t.Run(layout, func(t *testing.T) {
+			dir := t.TempDir()
+			target := filepath.Join(dir, layout, "nuxt/bin/nuxt.mjs")
+			bin := filepath.Join(dir, "node_modules/.bin/nuxt")
+			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Dir(bin), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(target, nil, 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, bin); err != nil {
+				t.Fatal(err)
+			}
+			if got := catalog([]string{"node", bin, "dev"}, dir); got != "Nuxt" {
+				t.Fatal(got)
+			}
+		})
 	}
 }
 
