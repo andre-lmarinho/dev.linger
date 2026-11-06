@@ -1,6 +1,6 @@
 # Baseline — 2026-11-06
 
-Reference revision `97e5e88` with the benchmark additions; no optimizations. Linux 7.0.0-42, amd64, Go 1.27.3, AMD Ryzen 5 5600G, 12 logical CPUs. The default Docker socket was present; daemon and container availability were not checked. These runs do not necessarily represent normal usage.
+Application revision `97e5e88`, unchanged in benchmark commit `22f2d52`; no optimizations. Some benchmark fixtures and the process sampler were added after that commit, as noted below. Linux 7.0.0-42, amd64, Go 1.27.3, AMD Ryzen 5 5600G, 12 logical CPUs. The default Docker socket was present; daemon and container availability were not checked. These runs do not necessarily represent normal usage.
 
 Method: commands in [README.md](README.md), three samples of at least 500 ms, run sequentially by package. The monitor initially observed 146 user processes, 8 listeners and no recognized services. A separate snapshot found 396 system processes, 149 user processes and 3,453 accessible user file descriptors. The workload varied; these counts were not simultaneous with the baseline.
 
@@ -36,5 +36,27 @@ To reproduce, start `python3 -m http.server 39871 --bind 127.0.0.1` in a separat
 
 - `AssociateSockets` is the main candidate in this scenario; measure under real workloads and verify symlink, recognition and shared-socket correctness before proposing a change.
 - Measure real projects, more listeners, Docker active/inactive and high load.
-- Whole-application CPU and RSS over multiple cycles, system calls per stage and D-Bus signals on the Zorin desktop, including `AboutToShow` and an open menu, remain unmeasured. There is no conclusion about user experience or expected gains.
+- CPU and RSS were measured only in the short private-bus scenario below; real-desktop resource use and D-Bus behavior on Zorin, including `AboutToShow` and an open menu, remain unmeasured. There is no conclusion about user experience or expected gains.
 - No optimizations, frequency changes or CI configuration were made.
+
+## Synthetic fixture reference
+
+The fixed fixture described in [README.md](README.md) was run separately with `go test ./internal/monitor -run '^TestSyntheticProc$' -bench '^BenchmarkSyntheticProc$' -benchmem -benchtime=500ms -count=3`. Same machine and Go as above; the fixture test passed. These measurements are a reference for the fixture, not a before/after comparison or a substitute for real `/proc`.
+
+| Benchmark | Median time | Range | B/op | allocs/op |
+|---|---:|---:|---:|---:|
+| Listeners | 20.50 µs | 20.42–20.85 µs | 12,720 | 49 |
+| Processes | 2.222 ms | 2.220–2.227 ms | 332,821 | 2,627 |
+| AssociateSockets | 13.30 ms | 13.22–13.64 ms | 2,628,588 | 33,260 |
+| Discovery | 15.56 ms | 15.56–15.57 ms | 2,992,182 | 36,137 |
+
+## Whole-process CPU and RSS
+
+Two baseline runs of the unchanged application used `-trimpath -ldflags='-s -w'`, a private D-Bus watcher and a local Python HTTP server. A separate check observed 141 user processes, 9 listeners and one recognized service; host workload and Docker state were not controlled. The [sampler](README.md#whole-process-cpu-and-rss) measured approximately 35 seconds per run, including startup, with samples roughly every 200 ms. Runs were interleaved with a separate experimental candidate; only committed-application results appear here. The sampler and watcher were added after `22f2d52`.
+
+| Run | Sampled interval | CPU time | Avg CPU, one core | Final RSS | Peak RSS (`VmHWM`) |
+|---|---:|---:|---:|---:|---:|
+| 1 | 34.849 s | 0.18 s | 0.517% | 15,796 KiB | 15,796 KiB |
+| 2 | 34.850 s | 0.19 s | 0.545% | 15,808 KiB | 15,808 KiB |
+
+CPU time is quantized to 10 ms clock ticks; the first sample may miss startup CPU. RSS includes shared pages. Two short runs cannot establish long-term memory usage or represent the real desktop. The sampler does not count completed scans, and the private watcher excludes desktop-side resources.
