@@ -42,6 +42,5 @@ func main() {
 	}()
 	select {
 	case <-ctx.Done():
-	case <-t.Done():
 	}
 }
