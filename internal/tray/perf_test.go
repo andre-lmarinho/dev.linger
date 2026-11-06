@@ -35,8 +35,7 @@ func BenchmarkUpdate(b *testing.B) {
 	defer t.Close()
 	services := []monitor.Service{{Name: "Vite", Project: "/project", CPUValid: true, MemoryValid: true}}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		t.Update(services, nil)
 	}
 }

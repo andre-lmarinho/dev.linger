@@ -42,9 +42,10 @@ def main():
                 raise RuntimeError(f"application exited early: {app.returncode}")
             try:
                 samples.append((time.monotonic(), *sample(app.pid)))
-            except (FileNotFoundError, KeyError):
+            except (FileNotFoundError, KeyError) as error:
                 if app.poll() is not None:
-                    raise RuntimeError(f"application exited early: {app.returncode}")
+                    raise RuntimeError(f"application exited early: {app.returncode}") from error
+                raise RuntimeError(f"failed to sample application process {app.pid}: {error}") from error
             time.sleep(0.2)
         if len(samples) < 2:
             raise RuntimeError("not enough process samples")
