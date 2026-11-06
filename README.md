@@ -43,6 +43,10 @@ Docker discovery supports local Unix sockets only. See the [Docker socket select
 
 DevLinger uses an absolute Unix `DOCKER_HOST` when set. Otherwise it checks `$XDG_RUNTIME_DIR/docker.sock`, then `/var/run/docker.sock`. If the selected socket is inaccessible, it does not fall back to another. Remote hosts and Docker CLI contexts are not supported.
 
+## Autostart
+
+Debian package installations enable autostart by default (`/etc/xdg/autostart/devlinger.desktop`) so DevLinger starts with your login session. To disable it, remove that file: `sudo rm /etc/xdg/autostart/devlinger.desktop`.
+
 ## Development
 
 ```sh

@@ -22,8 +22,17 @@ jobs:
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o devlinger-linux-amd64 .
-          mkdir -p package/DEBIAN package/usr/bin
+          mkdir -p package/DEBIAN package/usr/bin package/etc/xdg/autostart
           install -m 755 devlinger-linux-amd64 package/usr/bin/devlinger
+          cat > package/etc/xdg/autostart/devlinger.desktop <<EOF
+          [Desktop Entry]
+          Name=DevLinger
+          Comment=Linux system tray monitor for local development services
+          Exec=devlinger
+          Type=Application
+          Categories=System;Monitor;
+          Hidden=false
+          EOF
           cat > package/DEBIAN/control <<EOF
           Package: devlinger
           Version: ${version}

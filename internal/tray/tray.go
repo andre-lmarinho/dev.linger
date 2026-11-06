@@ -24,8 +24,6 @@ type Tray struct {
 	mu       sync.RWMutex
 	services []monitor.Service
 	revision uint32
-	quit     chan struct{}
-	once     sync.Once
 }
 
 type pixmap struct {
@@ -53,7 +51,7 @@ func New() (*Tray, error) {
 	if err != nil {
 		return nil, err
 	}
-	t := &Tray{conn: conn, quit: make(chan struct{})}
+	t := &Tray{conn: conn}
 	fail := func(err error) (*Tray, error) { conn.Close(); return nil, err }
 	name := fmt.Sprintf("org.kde.StatusNotifierItem-%d-1", os.Getpid())
 	reply, err := conn.RequestName(name, dbus.NameFlagDoNotQueue)
@@ -127,7 +125,6 @@ func (t *Tray) Update(services []monitor.Service, scanErr error) {
 	t.conn.Emit(menuPath, "com.canonical.dbusmenu.LayoutUpdated", rev, int32(0))
 }
 
-func (t *Tray) Done() <-chan struct{}                      { return t.quit }
 func (t *Tray) Close()                                     { t.conn.Close() }
 func (t *Tray) Activate(int32, int32) *dbus.Error          { return nil }
 func (t *Tray) SecondaryActivate(int32, int32) *dbus.Error { return nil }
@@ -160,7 +157,6 @@ func (t *Tray) items() []layout {
 		}
 		items = append(items, item)
 	}
-	items = append(items, layout{ID: 4, Properties: map[string]dbus.Variant{"label": dbus.MakeVariant("Quit")}})
 	for i := range items {
 		if items[i].Children == nil {
 			items[i].Children = []dbus.Variant{}
@@ -312,12 +308,9 @@ func (t *Tray) GetProperty(id int32, name string) (dbus.Variant, *dbus.Error) {
 	}
 	return dbus.Variant{}, dbus.MakeFailedError(fmt.Errorf("unknown property"))
 }
-func (t *Tray) Event(id int32, eventID string, data dbus.Variant, timestamp uint32) *dbus.Error {
-	if id == 4 && eventID == "clicked" {
-		t.once.Do(func() { close(t.quit) })
-	}
-	return nil
-}
+
+// This build exposes no Quit or autostart items; click events are ignored.
+func (t *Tray) Event(int32, string, dbus.Variant, uint32) *dbus.Error { return nil }
 func (t *Tray) EventGroup(events []event) ([]int32, *dbus.Error) {
 	for _, e := range events {
 		t.Event(e.ID, e.EventID, e.Data, e.Timestamp)

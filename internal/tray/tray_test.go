@@ -123,7 +123,7 @@ func TestMenuOverDBus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if revision != 1 || len(menu.Children) != 4 {
+	if revision != 1 || len(menu.Children) != 3 {
 		t.Fatalf("unexpected menu: %#v revision %d", menu, revision)
 	}
 	err = conn.Object(tray.conn.Names()[0], menuPath).Call("com.canonical.dbusmenu.GetLayout", 0, int32(11), int32(1), []string{}).Store(&revision, &menu)
@@ -133,5 +133,32 @@ func TestMenuOverDBus(t *testing.T) {
 	tray.Update(nil, nil)
 	if got := icon()[0].Data; got[(7*16+7)*4] != 160 {
 		t.Fatal("empty icon is not dimmed")
+	}
+}
+
+// TestMenuHasNoQuitNoAutostart locks in the requirement: the menu must never
+// contain a Quit item or an autostart toggle, in any state.
+func TestMenuHasNoQuitNoAutostart(t *testing.T) {
+	cases := map[string][]monitor.Service{
+		"empty": nil,
+		"services": {
+			{Name: "Vite", CPUValid: true},
+			{Name: "demo", Docker: true, Members: []monitor.Service{{Name: "web"}}},
+		},
+	}
+	for name, services := range cases {
+		tray := &Tray{services: services}
+		var walk func(children []dbus.Variant)
+		walk = func(children []dbus.Variant) {
+			for _, v := range children {
+				item := v.Value().(layout)
+				label, _ := item.Properties["label"].Value().(string)
+				if label == "Quit" || label == "Start at login" {
+					t.Fatalf("%s: forbidden item %q in menu", name, label)
+				}
+				walk(item.Children)
+			}
+		}
+		walk(tray.root().Children)
 	}
 }
