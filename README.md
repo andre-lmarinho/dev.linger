@@ -54,4 +54,6 @@ dbus-run-session -- go test -race ./...
 go vet ./...
 ```
 
+Performance benchmarks and baseline: [`benchmarks/README.md`](benchmarks/README.md).
+
 Licensed under the [MIT License](LICENSE).
