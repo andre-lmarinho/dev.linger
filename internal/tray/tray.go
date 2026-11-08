@@ -121,11 +121,16 @@ func waitForWatcher(
 			return fmt.Errorf("watcher registration failed: %w", call.Err)
 		}
 
+		timer := time.NewTimer(5 * time.Second)
+
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return ctx.Err()
-
+		case <-timer.C:
+			// Retry registration if the watcher signal was missed.
 		case signal, ok := <-signals:
+			timer.Stop()
 			if !ok {
 				return fmt.Errorf("watcher signal channel closed")
 			}
