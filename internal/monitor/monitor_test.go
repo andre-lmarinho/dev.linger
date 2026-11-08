@@ -285,7 +285,8 @@ func TestDescendantSocketOwnersRemainSeparate(t *testing.T) {
 			}
 		}
 	}
-	owners := processOwners(proc, os.Getuid())
+	listeners := []listener{{inode: "111"}, {inode: "222"}, {inode: "333"}, {inode: "shared"}}
+	owners := processOwners(proc, os.Getuid(), listeners)
 	if owners["111"].PID != 11 || owners["222"].PID != 12 {
 		t.Fatalf("wrong owners: %#v", owners)
 	}
@@ -392,10 +393,10 @@ func TestProcessOwnerFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	listeners := []listener{{"127.0.0.1", 3000, "123"}}
-	if got := collect(listeners, processOwners(proc, os.Getuid()), nil); len(got) != 1 || got[0].PID != 42 {
+	if got := collect(listeners, processOwners(proc, os.Getuid(), listeners), nil); len(got) != 1 || got[0].PID != 42 {
 		t.Fatalf("unexpected services: %#v", got)
 	}
-	if got := collect(listeners, processOwners(proc, os.Getuid()+1), nil); len(got) != 0 {
+	if got := collect(listeners, processOwners(proc, os.Getuid()+1, listeners), nil); len(got) != 0 {
 		t.Fatalf("wrong owner accepted: %#v", got)
 	}
 }

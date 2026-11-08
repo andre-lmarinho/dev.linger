@@ -50,6 +50,9 @@ func matchCatalog(args []string, cwd string, entries []signature) string {
 	if len(args) == 0 || cwd == "" {
 		return ""
 	}
+	// Each signature considers either the executable or its first argument.
+	var paths [2]string
+	var resolvedPaths [2]bool
 	for _, entry := range entries {
 		i := 0
 		for _, executable := range entry.executables {
@@ -65,15 +68,18 @@ func matchCatalog(args []string, cwd string, entries []signature) string {
 			if i >= len(args) {
 				continue
 			}
-			path := args[i]
-			if !filepath.IsAbs(path) {
-				path = filepath.Join(cwd, path)
+			if !resolvedPaths[i] {
+				path := args[i]
+				if !filepath.IsAbs(path) {
+					path = filepath.Join(cwd, path)
+				}
+				if resolved, err := filepath.EvalSymlinks(path); err == nil {
+					path = resolved
+				}
+				paths[i] = filepath.ToSlash(filepath.Clean(path))
+				resolvedPaths[i] = true
 			}
-			if resolved, err := filepath.EvalSymlinks(path); err == nil {
-				path = resolved
-			}
-			path = filepath.ToSlash(filepath.Clean(path))
-			if !strings.HasSuffix(path, entry.entrypoint) {
+			if !strings.HasSuffix(paths[i], entry.entrypoint) {
 				continue
 			}
 			i++

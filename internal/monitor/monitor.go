@@ -47,7 +47,7 @@ func Scan(ctx context.Context) ([]Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	owners := processOwners("/proc", os.Getuid())
+	owners := processOwners("/proc", os.Getuid(), listeners)
 	return collect(listeners, owners, docker(ctx)), nil
 }
 
@@ -205,9 +205,9 @@ type process struct {
 	args        []string
 }
 
-func processOwners(proc string, uid int) map[string]Service {
+func processOwners(proc string, uid int, listeners []listener) map[string]Service {
 	processes := readProcesses(proc, uid)
-	return associateSockets(proc, processes)
+	return associateSockets(proc, processes, listeners)
 }
 
 func readProcesses(proc string, uid int) map[int]process {
@@ -257,7 +257,11 @@ func readProcesses(proc string, uid int) map[int]process {
 	return processes
 }
 
-func associateSockets(proc string, processes map[int]process) map[string]Service {
+func associateSockets(proc string, processes map[int]process, listeners []listener) map[string]Service {
+	inodes := make(map[string]bool, len(listeners))
+	for _, listener := range listeners {
+		inodes[listener.inode] = true
+	}
 	type association struct {
 		pid        int
 		service    Service
@@ -266,12 +270,9 @@ func associateSockets(proc string, processes map[int]process) map[string]Service
 	}
 	sockets := map[string]association{}
 	for pid, p := range processes {
-		name, evidence, ok := recognized(p, processes)
-		service := Service{Name: name, PID: p.pid, Project: evidence.cwd, start: p.start}
+		var service Service
+		var ok, initialized bool
 		base := filepath.Join(proc, strconv.Itoa(pid))
-		if data, err := os.ReadFile(filepath.Join(base, "cgroup")); ok && err == nil {
-			service.ContainerID = dockerCgroupID(string(data))
-		}
 		fds, err := os.ReadDir(filepath.Join(base, "fd"))
 		if err != nil {
 			continue
@@ -282,6 +283,18 @@ func associateSockets(proc string, processes map[int]process) map[string]Service
 				continue
 			}
 			inode := strings.TrimSuffix(strings.TrimPrefix(target, "socket:["), "]")
+			if !inodes[inode] {
+				continue
+			}
+			if !initialized {
+				name, evidence, recognizedProcess := recognized(p, processes)
+				ok = recognizedProcess
+				service = Service{Name: name, PID: p.pid, Project: evidence.cwd, start: p.start}
+				if data, err := os.ReadFile(filepath.Join(base, "cgroup")); ok && err == nil {
+					service.ContainerID = dockerCgroupID(string(data))
+				}
+				initialized = true
+			}
 			existing, exists := sockets[inode]
 			if exists && existing.pid != pid {
 				existing.shared = true

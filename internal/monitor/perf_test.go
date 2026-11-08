@@ -35,7 +35,7 @@ func BenchmarkLive(b *testing.B) {
 			}
 		}},
 		{"Processes", func() { readProcesses("/proc", os.Getuid()) }},
-		{"AssociateSockets", func() { associateSockets("/proc", processes) }},
+		{"AssociateSockets", func() { associateSockets("/proc", processes, listeners) }},
 		{"Docker", func() { docker(ctx) }},
 	}
 	var metrics Metrics

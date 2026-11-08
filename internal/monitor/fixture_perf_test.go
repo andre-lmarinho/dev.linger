@@ -62,15 +62,30 @@ func TestSyntheticProc(t *testing.T) {
 	if err != nil || len(listeners) != 10 {
 		t.Fatalf("listeners: %d, error: %v", len(listeners), err)
 	}
-	owners := processOwners(root, os.Getuid())
+	owners := processOwners(root, os.Getuid(), listeners)
 	if len(owners) != 10 || owners["1000"].Name != "Python HTTP server" {
 		t.Fatalf("unexpected owners: %#v", owners)
 	}
-	if _, ok := owners["999999"]; ok {
-		t.Fatal("shared socket must not have an owner")
-	}
 	if services := collect(listeners, owners, nil); len(services) != 10 {
 		t.Fatalf("got %d services, want 10", len(services))
+	}
+}
+
+func TestListenerIndexPreservesSharedOwnership(t *testing.T) {
+	root := syntheticProc(t)
+	id := strings.Repeat("a", 64)
+	if err := os.WriteFile(filepath.Join(root, "1000", "cgroup"), []byte("0::/docker/"+id+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, pid := range []string{"1002", "1010"} {
+		if err := os.Symlink("socket:[888888]", filepath.Join(root, pid, "fd", "10")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	listeners := []listener{{inode: "1000"}, {inode: "999999"}, {inode: "888888"}, {inode: "1010"}}
+	owners := processOwners(root, os.Getuid(), listeners)
+	if len(owners) != 1 || owners["1000"].PID != 1000 || owners["1000"].ContainerID != id {
+		t.Fatalf("unexpected owners: %#v", owners)
 	}
 }
 
@@ -87,6 +102,10 @@ func TestCatalogDistinctCandidates(t *testing.T) {
 func BenchmarkSyntheticProc(b *testing.B) {
 	root := syntheticProc(b)
 	processes := readProcesses(root, os.Getuid())
+	listeners, err := readListeners(root)
+	if err != nil {
+		b.Fatal(err)
+	}
 	for _, tc := range []struct {
 		name string
 		run  func()
@@ -97,13 +116,13 @@ func BenchmarkSyntheticProc(b *testing.B) {
 			}
 		}},
 		{"Processes", func() { readProcesses(root, os.Getuid()) }},
-		{"AssociateSockets", func() { associateSockets(root, processes) }},
+		{"AssociateSockets", func() { associateSockets(root, processes, listeners) }},
 		{"Discovery", func() {
 			listeners, err := readListeners(root)
 			if err != nil {
 				b.Fatal(err)
 			}
-			collect(listeners, processOwners(root, os.Getuid()), nil)
+			collect(listeners, processOwners(root, os.Getuid(), listeners), nil)
 		}},
 	} {
 		b.Run(tc.name, func(b *testing.B) {
