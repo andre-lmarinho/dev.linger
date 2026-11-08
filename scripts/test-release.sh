@@ -52,12 +52,21 @@ package_root="$tmp/package-root"
 mkdir -p "$package_root"
 dpkg-deb -x "$package" "$package_root"
 
+desktop="io.github.devlinger.DevLinger.desktop"
+assets="$root/packaging/linux"
+
 for destination in \
-  etc/xdg/autostart/devlinger.desktop \
-  usr/share/applications/devlinger.desktop
+  "etc/xdg/autostart/$desktop" \
+  "usr/share/applications/$desktop"
 do
-  cmp "$root/scripts/devlinger.desktop" "$package_root/$destination"
+  cmp "$assets/$desktop" "$package_root/$destination"
 done
+
+cmp "$assets/io.github.devlinger.DevLinger.metainfo.xml" \
+  "$package_root/usr/share/metainfo/io.github.devlinger.DevLinger.metainfo.xml"
+
+cmp "$assets/io.github.devlinger.DevLinger.svg" \
+  "$package_root/usr/share/icons/hicolor/scalable/apps/io.github.devlinger.DevLinger.svg"
 
 cmp "$root/scripts/install.sh" "$tmp/repo/install.sh"
 mkdir "$tmp/mock"

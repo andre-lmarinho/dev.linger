@@ -53,7 +53,9 @@ DevLinger uses an absolute Unix `DOCKER_HOST` when set. Otherwise it checks `$XD
 
 ## Autostart
 
-Debian package installations enable autostart by default (`/etc/xdg/autostart/devlinger.desktop`) so DevLinger starts with your login session. To disable it for your user, copy that file to `~/.config/autostart/devlinger.desktop` and change `Hidden=false` to `Hidden=true` in the copy.
+Debian package installations enable autostart by default (`/etc/xdg/autostart/io.github.devlinger.DevLinger.desktop`) so DevLinger starts with your login session.
+
+To disable autostart for your user, copy the system-wide Desktop Entry to `~/.config/autostart/io.github.devlinger.DevLinger.desktop` and add `Hidden=true` under `[Desktop Entry]`.
 
 ## Development
 

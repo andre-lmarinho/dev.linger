@@ -13,17 +13,25 @@ mkdir -p \
   "$tmp/package/DEBIAN" \
   "$tmp/package/usr/bin" \
   "$tmp/package/etc/xdg/autostart" \
-  "$tmp/package/usr/share/applications"
+  "$tmp/package/usr/share/applications" \
+  "$tmp/package/usr/share/metainfo" \
+  "$tmp/package/usr/share/icons/hicolor/scalable/apps"
 
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
   go build -trimpath -ldflags='-s -w' \
   -o "$tmp/package/usr/bin/devlinger" .
 
-install -m 644 scripts/devlinger.desktop \
-  "$tmp/package/etc/xdg/autostart/devlinger.desktop"
+install -m 644 packaging/linux/io.github.devlinger.DevLinger.desktop \
+  "$tmp/package/etc/xdg/autostart/io.github.devlinger.DevLinger.desktop"
 
-install -m 644 scripts/devlinger.desktop \
-  "$tmp/package/usr/share/applications/devlinger.desktop"
+install -m 644 packaging/linux/io.github.devlinger.DevLinger.desktop \
+  "$tmp/package/usr/share/applications/io.github.devlinger.DevLinger.desktop"
+
+install -m 644 packaging/linux/io.github.devlinger.DevLinger.metainfo.xml \
+  "$tmp/package/usr/share/metainfo/io.github.devlinger.DevLinger.metainfo.xml"
+
+install -m 644 packaging/linux/io.github.devlinger.DevLinger.svg \
+  "$tmp/package/usr/share/icons/hicolor/scalable/apps/io.github.devlinger.DevLinger.svg"
 cat > "$tmp/package/DEBIAN/control" <<EOF
 Package: devlinger
 Version: $version

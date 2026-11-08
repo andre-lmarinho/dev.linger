@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.devlinger.DevLinger</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>DevLinger</name>
+  <summary>Monitor local development services from your Linux system tray</summary>
+
+  <description>
+    <p>
+      DevLinger is a read-only Linux system tray application that
+      monitors local development servers and running Docker containers.
+    </p>
+    <p>
+      View project names, ports, Git branches, uptime and available
+      resource metrics without keeping your development tools open.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.devlinger.DevLinger.desktop</launchable>  <url type="homepage">https://github.com/andre-lmarinho/dev.linger</url>
+  <provides>
+    <binary>devlinger</binary>
+  </provides>
+</component>
