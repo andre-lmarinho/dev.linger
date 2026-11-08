@@ -18,7 +18,8 @@
     </p>
   </description>
 
-  <launchable type="desktop-id">io.github.devlinger.DevLinger.desktop</launchable>  <url type="homepage">https://github.com/andre-lmarinho/dev.linger</url>
+  <launchable type="desktop-id">io.github.devlinger.DevLinger.desktop</launchable>
+  <url type="homepage">https://github.com/andre-lmarinho/dev.linger</url>
   <provides>
     <binary>devlinger</binary>
   </provides>
