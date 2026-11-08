@@ -24,7 +24,7 @@ After the APT repository is published, install with:
 curl -fsSL https://andre-lmarinho.github.io/dev.linger/install.sh | bash
 ```
 
-This downloads and runs the [installation script](scripts/install.sh), which requires `curl`, `gpg` and `sudo`, configures the signed APT repository and installs DevLinger. Review the script before running it if you prefer. Updates are installed with `sudo apt update && sudo apt upgrade`. Restart DevLinger (or log out and back in) to run the new version. To remove the application, run `sudo apt remove devlinger`; remove `/etc/apt/sources.list.d/devlinger.list` and `/usr/share/keyrings/devlinger.gpg` separately if you no longer want this repository.
+This downloads and runs the [installation script](scripts/install.sh), which configures the signed APT repository, installs DevLinger and starts it in the current desktop session. Review the script before running it if you prefer. If DevLinger is already running, it will not start another instance. Updates are installed with `sudo apt update && sudo apt upgrade`; restart DevLinger to run the new version. To remove the application, run `sudo apt remove devlinger`; remove `/etc/apt/sources.list.d/devlinger.list` and `/usr/share/keyrings/devlinger.gpg` separately if you no longer want this repository.
 
 Already installed the `v0.1.0` `.deb`? Run the same installation command once to add the repository and upgrade the package.
 
