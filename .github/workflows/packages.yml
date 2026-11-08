@@ -107,3 +107,72 @@ jobs:
         run: |
           pacman -Qip /tmp/devlinger-aur/*.pkg.tar.zst
           pacman -Qlp /tmp/devlinger-aur/*.pkg.tar.zst
+
+  appimage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        run: |
+          mkdir -p dist
+
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -ldflags="-s -w" \
+            -o dist/devlinger .
+
+      - name: Prepare AppDir
+        run: bash scripts/build-appdir.sh
+
+      - name: Download appimagetool
+        run: |
+          curl --fail --location --retry 3 \
+            --output /tmp/appimagetool.AppImage \
+            https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
+
+          chmod +x /tmp/appimagetool.AppImage
+
+      - name: Build AppImage
+        run: |
+          VERSION=$(scripts/next-version.sh)
+          export VERSION
+          export ARCH=x86_64
+          export APPIMAGE_EXTRACT_AND_RUN=1
+
+          /tmp/appimagetool.AppImage \
+            dist/DevLinger.AppDir \
+            "dist/DevLinger-${VERSION}-x86_64.AppImage"
+
+      - name: Inspect AppImage
+        run: |
+          set -euo pipefail
+
+          appimage=(dist/DevLinger-*.AppImage)
+          test "${#appimage[@]}" -eq 1
+
+          chmod +x "${appimage[0]}"
+
+          cd dist
+          "./$(basename "${appimage[0]}")" --appimage-extract
+
+          test -x squashfs-root/usr/bin/devlinger
+          test -e squashfs-root/AppRun
+          test -e squashfs-root/io.github.devlinger.DevLinger.desktop
+          test -e squashfs-root/io.github.devlinger.DevLinger.svg
+          test -e squashfs-root/usr/share/metainfo/io.github.devlinger.DevLinger.metainfo.xml
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: devlinger-appimage
+          path: dist/DevLinger-*.AppImage
+          if-no-files-found: error
