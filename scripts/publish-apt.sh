@@ -14,14 +14,9 @@ mkdir -m 700 "$GNUPGHOME"
 printf '%s' "$SIGNING_KEY" | gpg --batch --import
 printf '%s' "$SIGNING_PASSPHRASE" > "$tmp/passphrase"
 chmod 600 "$tmp/passphrase"
-mapfile -t keys < <(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "sec" { primary=1; next } primary && $1 == "fpr" { print $10; primary=0 }')
-if [[ ${#keys[@]} -ne 1 ]]; then
-  echo 'Expected exactly one signing key' >&2
-  exit 1
-fi
-key=${keys[0]}
+key=$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "sec" { primary=1; next } primary && $1 == "fpr" { print $10; primary=0 }')
 if [[ "$key" != A17FD32EBCB92EC0C06CBA8E1B2A90F1DB7748F8 ]]; then
-  echo 'Signing key does not match the installer fingerprint' >&2
+  echo 'Expected exactly the signing key used by the installer' >&2
   exit 1
 fi
 
@@ -41,9 +36,9 @@ repo="$tmp/repo"
 git init -q "$repo"
 git -C "$repo" config user.name 'github-actions[bot]'
 git -C "$repo" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-git -C "$repo" remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
 if git ls-remote --exit-code --heads origin gh-pages >/dev/null; then
-  git -C "$repo" fetch -q origin refs/heads/gh-pages
+  git fetch -q origin refs/heads/gh-pages
+  git -C "$repo" fetch -q "$PWD" "$(git rev-parse FETCH_HEAD)"
   git -C "$repo" checkout -q -b gh-pages FETCH_HEAD
   oldkey=$(gpg --show-keys --with-colons "$repo/devlinger.gpg" | awk -F: '$1 == "pub" { primary=1; next } primary && $1 == "fpr" { print $10; exit }')
   if [[ "$oldkey" != "$key" ]]; then

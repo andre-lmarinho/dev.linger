@@ -23,6 +23,7 @@ mkdir -m 700 "$GNUPGHOME"
 gpg --batch --passphrase '' --quick-generate-key 'DevLinger test <test@example.org>' ed25519 sign 1d >/dev/null 2>&1
 key=$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "fpr" { print $10; exit }')
 touch "$tmp/passphrase"
+"$root/scripts/build-apt.sh" 0.1.0 "$tmp/repo" "$key" "$tmp/passphrase"
 "$root/scripts/build-apt.sh" 0.1.1 "$tmp/repo" "$key" "$tmp/passphrase"
 gpg --batch --verify "$tmp/repo/dists/stable/InRelease" >/dev/null 2>&1
 mkdir -p "$tmp/apt/lists/partial" "$tmp/apt/cache/archives/partial" "$tmp/apt/etc"
