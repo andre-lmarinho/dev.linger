@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/devlinger/devlinger/internal/app"
 	"github.com/devlinger/devlinger/internal/monitor"
 	"github.com/devlinger/devlinger/internal/tray"
 )
@@ -18,6 +19,15 @@ func main() {
 		syscall.SIGTERM,
 	)
 	defer stop()
+	instance, acquired, err := app.Acquire()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if !acquired {
+		return
+	}
+	defer instance.Close()
+
 	t, err := tray.New(ctx)
 	if err != nil {
 		log.Fatal(err)
