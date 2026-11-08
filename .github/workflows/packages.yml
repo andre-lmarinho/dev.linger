@@ -19,6 +19,25 @@ jobs:
         uses: docker://rhysd/actionlint:1.7.12
         with:
           args: -color
+
+  assets:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate desktop integration assets
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y appstream desktop-file-utils
+
+          desktop-file-validate \
+            packaging/linux/io.github.devlinger.DevLinger.desktop
+
+          appstreamcli validate --strict \
+            packaging/linux/io.github.devlinger.DevLinger.metainfo.xml
+
   rpm:
     runs-on: ubuntu-latest
 

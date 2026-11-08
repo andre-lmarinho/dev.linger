@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -96,7 +95,12 @@ mkdir -p "$package_root"
 dpkg-deb -x "$package" "$package_root"
 
 desktop="io.github.devlinger.DevLinger.desktop"
+metainfo="io.github.devlinger.DevLinger.metainfo.xml"
 assets="$root/packaging/linux"
+
+# The launcher and catalog metadata shipped in every package format.
+desktop-file-validate "$assets/$desktop"
+appstreamcli validate --strict "$assets/$metainfo"
 
 for destination in \
   "etc/xdg/autostart/$desktop" \
