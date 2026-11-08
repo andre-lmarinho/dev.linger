@@ -347,3 +347,119 @@ func TestTrayRegistersAfterWatcherRestart(t *testing.T) {
 		t.Fatal("DevLinger did not register after watcher restart")
 	}
 }
+
+func TestIsWatcherUnavailable(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "service unknown",
+			err:  dbus.NewError("org.freedesktop.DBus.Error.ServiceUnknown", nil),
+			want: true,
+		},
+		{
+			name: "name has no owner",
+			err:  dbus.NewError("org.freedesktop.DBus.Error.NameHasNoOwner", nil),
+			want: true,
+		},
+		{
+			name: "unknown method",
+			err:  dbus.NewError("org.freedesktop.DBus.Error.UnknownMethod", nil),
+		},
+		{
+			name: "unknown interface",
+			err:  dbus.NewError("org.freedesktop.DBus.Error.UnknownInterface", nil),
+		},
+		{
+			name: "invalid arguments",
+			err:  dbus.NewError("org.freedesktop.DBus.Error.InvalidArgs", nil),
+		},
+		{
+			name: "no such object",
+			err:  dbus.NewError("org.freedesktop.DBus.Error.NoSuchObject", nil),
+		},
+		{
+			name: "generic error",
+			err:  errors.New("connection closed"),
+		},
+		{
+			name: "service unknown as value",
+			err: dbus.Error{
+				Name: "org.freedesktop.DBus.Error.ServiceUnknown",
+			},
+			want: true,
+		},
+		{
+			name: "name has no owner as value",
+			err: dbus.Error{
+				Name: "org.freedesktop.DBus.Error.NameHasNoOwner",
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isWatcherUnavailable(tt.err)
+			if got != tt.want {
+				t.Errorf("isWatcherUnavailable(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+type rejectingWatcher struct{}
+
+func (rejectingWatcher) RegisterStatusNotifierItem(string) *dbus.Error {
+	return dbus.NewError(
+		"org.freedesktop.DBus.Error.InvalidArgs",
+		[]interface{}{"invalid indicator"},
+	)
+}
+
+func TestNewFailsOnPermanentWatcherError(t *testing.T) {
+	conn, err := dbus.ConnectSessionBus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	if err := conn.Export(
+		rejectingWatcher{},
+		"/StatusNotifierWatcher",
+		"org.kde.StatusNotifierWatcher",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	reply, err := conn.RequestName(
+		"org.kde.StatusNotifierWatcher",
+		dbus.NameFlagDoNotQueue,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply != dbus.RequestNameReplyPrimaryOwner {
+		t.Fatal("watcher name already owned")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err = New(ctx)
+
+	if err == nil {
+		t.Fatal("expected permanent registration error")
+	}
+
+	var dbusErr dbus.Error
+	if !errors.As(err, &dbusErr) {
+		t.Fatalf("expected D-Bus error, got %v", err)
+	}
+
+	if dbusErr.Name != "org.freedesktop.DBus.Error.InvalidArgs" {
+		t.Fatalf("unexpected D-Bus error: %s", dbusErr.Name)
+	}
+}

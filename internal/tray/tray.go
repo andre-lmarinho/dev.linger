@@ -2,6 +2,7 @@ package tray
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -53,6 +54,26 @@ type event struct {
 	Timestamp uint32
 }
 
+func isWatcherUnavailable(err error) bool {
+	var dbusErr dbus.Error
+
+	if !errors.As(err, &dbusErr) {
+		var ptr *dbus.Error
+		if !errors.As(err, &ptr) || ptr == nil {
+			return false
+		}
+		dbusErr = *ptr
+	}
+
+	switch dbusErr.Name {
+	case "org.freedesktop.DBus.Error.ServiceUnknown",
+		"org.freedesktop.DBus.Error.NameHasNoOwner":
+		return true
+	default:
+		return false
+	}
+}
+
 func waitForWatcher(ctx context.Context, conn *dbus.Conn, name string) error {
 	watcher := conn.Object(
 		"org.kde.StatusNotifierWatcher",
@@ -76,6 +97,10 @@ func waitForWatcher(ctx context.Context, conn *dbus.Conn, name string) error {
 
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+
+		if !isWatcherUnavailable(call.Err) {
+			return fmt.Errorf("watcher registration failed: %w", call.Err)
 		}
 
 		select {
