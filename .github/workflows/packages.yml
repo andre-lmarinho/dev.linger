@@ -1,0 +1,60 @@
+
+name: Build Linux packages
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rpm:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        run: |
+          mkdir -p dist
+
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -ldflags="-s -w" \
+            -o dist/devlinger .
+
+      - name: Install nFPM
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.0
+
+      - name: Build RPM
+        run: |
+          VERSION=$(scripts/next-version.sh)
+          export VERSION
+
+          "$(go env GOPATH)/bin/nfpm" package \
+            --config packaging/nfpm.yaml \
+            --packager rpm \
+            --target dist/
+
+      - name: Inspect RPM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+
+          rpm -qpl dist/*.rpm
+
+      - name: Upload RPM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: devlinger-rpm
+          path: dist/*.rpm
+          if-no-files-found: error

@@ -1,0 +1,28 @@
+name: devlinger
+arch: amd64
+platform: linux
+version: ${VERSION}
+version_schema: semver
+
+maintainer: DevLinger contributors
+description: Linux system tray monitor for local development services
+homepage: https://github.com/andre-lmarinho/dev.linger
+license: MIT
+
+contents:
+  - src: dist/devlinger
+    dst: /usr/bin/devlinger
+    file_info:
+      mode: 0755
+
+  - src: packaging/linux/io.github.devlinger.DevLinger.desktop
+    dst: /usr/share/applications/io.github.devlinger.DevLinger.desktop
+
+  - src: packaging/linux/io.github.devlinger.DevLinger.desktop
+    dst: /etc/xdg/autostart/io.github.devlinger.DevLinger.desktop
+
+  - src: packaging/linux/io.github.devlinger.DevLinger.metainfo.xml
+    dst: /usr/share/metainfo/io.github.devlinger.DevLinger.metainfo.xml
+
+  - src: packaging/linux/io.github.devlinger.DevLinger.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/io.github.devlinger.DevLinger.svg
