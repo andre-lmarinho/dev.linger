@@ -65,10 +65,29 @@ cat > "$tmp/mock/sudo" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >> "$TEST_SUDO_LOG"
 EOF
+cat > "$tmp/mock/pgrep" <<'EOF'
+#!/bin/sh
+exit "${TEST_RUNNING:-1}"
+EOF
+cat > "$tmp/mock/nohup" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" > "$TEST_LAUNCH_LOG"
+EOF
 chmod +x "$tmp/mock/"*
 export TEST_SUDO_LOG="$tmp/sudo.log"
-PATH="$tmp/mock:$PATH" bash "$root/scripts/install.sh"
+export TEST_LAUNCH_LOG="$tmp/launch.log"
+DISPLAY=:99 WAYLAND_DISPLAY= PATH="$tmp/mock:$PATH" bash "$root/scripts/install.sh"
+for i in {1..50}; do
+  [[ -s "$TEST_LAUNCH_LOG" ]] && break
+  sleep 0.02
+done
+grep -qx devlinger "$TEST_LAUNCH_LOG"
 grep -q '^apt-get install -y devlinger$' "$TEST_SUDO_LOG"
+rm "$TEST_LAUNCH_LOG"
+TEST_RUNNING=0 DISPLAY=:99 PATH="$tmp/mock:$PATH" bash "$root/scripts/install.sh" | grep -q 'already running'
+[[ ! -e "$TEST_LAUNCH_LOG" ]]
+DISPLAY= WAYLAND_DISPLAY= PATH="$tmp/mock:$PATH" bash "$root/scripts/install.sh" | grep -q 'No desktop session'
+[[ ! -e "$TEST_LAUNCH_LOG" ]]
 : > "$TEST_SUDO_LOG"
 if TEST_FINGERPRINT=BAD PATH="$tmp/mock:$PATH" bash "$root/scripts/install.sh" 2>/dev/null; then
   echo 'Installer accepted an unexpected signing key' >&2
