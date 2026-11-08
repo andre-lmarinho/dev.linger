@@ -168,6 +168,10 @@ jobs:
             --output /tmp/appimagetool.AppImage \
             https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
 
+          printf '%s  /tmp/appimagetool.AppImage\n' \
+            46fdd785094c7f6e545b61afcfb0f3d98d8eab243f644b4b17698c01d06083d1 |
+            sha256sum --check
+
           chmod +x /tmp/appimagetool.AppImage
 
       - name: Install AppImage build dependencies
