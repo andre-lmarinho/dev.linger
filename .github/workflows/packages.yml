@@ -1,0 +1,216 @@
+
+name: Build Linux packages
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workflow-lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate GitHub Actions workflows
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
+
+  assets:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate desktop integration assets
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y appstream desktop-file-utils
+
+          desktop-file-validate \
+            packaging/linux/io.github.devlinger.DevLinger.desktop
+
+          appstreamcli validate --strict \
+            packaging/linux/io.github.devlinger.DevLinger.metainfo.xml
+
+  rpm:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        run: |
+          mkdir -p dist
+
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -ldflags="-s -w" \
+            -o dist/devlinger .
+
+      - name: Install nFPM
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.0
+
+      - name: Build RPM
+        run: |
+          VERSION=$(cat VERSION)
+          export VERSION
+
+          "$(go env GOPATH)/bin/nfpm" package \
+            --config packaging/nfpm.yaml \
+            --packager rpm \
+            --target dist/
+
+      - name: Inspect RPM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+
+          rpm -qpl dist/*.rpm
+
+      - name: Upload RPM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: devlinger-rpm
+          path: dist/*.rpm
+          if-no-files-found: error
+
+  aur:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+
+    steps:
+      - name: Install build dependencies
+        run: pacman -Sy --noconfirm --needed go git
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare PR source archive
+        shell: bash
+        run: |
+          mkdir -p /tmp/devlinger-aur
+
+          tar \
+            --exclude=.git \
+            --transform='s|^\./|dev.linger-0.0.0/|' \
+            -czf /tmp/devlinger-aur/devlinger-0.0.0.tar.gz \
+            .
+
+          checksum=$(sha256sum \
+            /tmp/devlinger-aur/devlinger-0.0.0.tar.gz |
+            cut -d ' ' -f 1)
+
+          sed \
+            -e 's/@VERSION@/0.0.0/g' \
+            -e "s/@SHA256@/$checksum/g" \
+            -e 's|source=.*|source=("devlinger-0.0.0.tar.gz")|' \
+            packaging/aur/PKGBUILD.in \
+            > /tmp/devlinger-aur/PKGBUILD
+
+      - name: Build Arch package
+        shell: bash
+        run: |
+          useradd --create-home builder
+          chown -R builder:builder /tmp/devlinger-aur
+
+          runuser -u builder -- \
+            bash -c 'cd /tmp/devlinger-aur && makepkg --noconfirm --nodeps'
+
+      - name: Inspect Arch package
+        shell: bash
+        run: |
+          pacman -Qip /tmp/devlinger-aur/*.pkg.tar.zst
+          pacman -Qlp /tmp/devlinger-aur/*.pkg.tar.zst
+
+  appimage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        run: |
+          mkdir -p dist
+
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -ldflags="-s -w" \
+            -o dist/devlinger .
+
+      - name: Prepare AppDir
+        run: bash scripts/build-appdir.sh
+
+      - name: Download appimagetool
+        run: |
+          curl --fail --location --retry 3 \
+            --output /tmp/appimagetool.AppImage \
+            https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
+
+          printf '%s  /tmp/appimagetool.AppImage\n' \
+            46fdd785094c7f6e545b61afcfb0f3d98d8eab243f644b4b17698c01d06083d1 |
+            sha256sum --check
+
+          chmod +x /tmp/appimagetool.AppImage
+
+      - name: Install AppImage build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y desktop-file-utils
+
+      - name: Build AppImage
+        run: |
+          VERSION=$(cat VERSION)
+          export VERSION
+          export ARCH=x86_64
+          export APPIMAGE_EXTRACT_AND_RUN=1
+
+          /tmp/appimagetool.AppImage \
+            dist/DevLinger.AppDir \
+            "dist/DevLinger-${VERSION}-x86_64.AppImage"
+
+      - name: Inspect AppImage
+        run: |
+          set -euo pipefail
+
+          appimage=(dist/DevLinger-*.AppImage)
+          test "${#appimage[@]}" -eq 1
+
+          chmod +x "${appimage[0]}"
+
+          cd dist
+          "./$(basename "${appimage[0]}")" --appimage-extract
+
+          test -x squashfs-root/usr/bin/devlinger
+          test -e squashfs-root/AppRun
+          test -e squashfs-root/io.github.devlinger.DevLinger.desktop
+          test -e squashfs-root/io.github.devlinger.DevLinger.svg
+          test -e squashfs-root/usr/share/metainfo/io.github.devlinger.DevLinger.metainfo.xml
+
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: devlinger-appimage
+          path: dist/DevLinger-*.AppImage
+          if-no-files-found: error

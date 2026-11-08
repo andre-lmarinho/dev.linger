@@ -20,13 +20,29 @@ if [[ "$key" != A17FD32EBCB92EC0C06CBA8E1B2A90F1DB7748F8 ]]; then
   exit 1
 fi
 
-# A rerun after the atomic push can proceed directly to deployment.
-existing=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
-if [[ -n "$existing" ]] && git ls-remote --exit-code --tags origin "refs/tags/$existing" >/dev/null; then
-  exit 0
+version=$(<VERSION)
+
+if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Invalid VERSION: $version" >&2
+  exit 1
 fi
-version=$(scripts/next-version.sh)
+
 tag="v$version"
+
+# Allow retries only when the published tag matches VERSION and HEAD.
+existing=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)
+
+if [[ -n "$existing" ]]; then
+  if [[ "$existing" != "$tag" ]]; then
+    echo "VERSION $version does not match existing tag $existing" >&2
+    exit 1
+  fi
+
+  if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+    exit 0
+  fi
+fi
+
 if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
   echo "Tag $tag already exists on another commit" >&2
   exit 1

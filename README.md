@@ -28,6 +28,10 @@ This downloads and runs the [installation script](scripts/install.sh), which con
 
 Already installed the `v0.1.0` `.deb`? Run the same installation command once to add the repository and upgrade the package.
 
+### Install from releases
+
+Each release attaches the same versioned files: `devlinger_0.3.0_amd64.deb`, `devlinger-0.3.0.x86_64.rpm`, `DevLinger-0.3.0-x86_64.AppImage` and `SHA256SUMS`. Verify the download with `sha256sum -c` and install the format by hand, or run the AppImage directly. On Arch, build the package from [`packaging/aur`](packaging/aur) until it is published to the AUR. To remove the RPM, run `sudo rpm -e devlinger`; delete the AppImage file instead.
+
 ### Build from source
 
 Requires Go 1.24 or later:
@@ -53,7 +57,9 @@ DevLinger uses an absolute Unix `DOCKER_HOST` when set. Otherwise it checks `$XD
 
 ## Autostart
 
-Debian package installations enable autostart by default (`/etc/xdg/autostart/devlinger.desktop`) so DevLinger starts with your login session. To disable it for your user, copy that file to `~/.config/autostart/devlinger.desktop` and change `Hidden=false` to `Hidden=true` in the copy.
+Package installations enable autostart by default (`/etc/xdg/autostart/io.github.devlinger.DevLinger.desktop` installed by the DEB, RPM and AUR packages) so DevLinger starts with your login session.
+
+To disable autostart for your user, copy the system-wide Desktop Entry to `~/.config/autostart/io.github.devlinger.DevLinger.desktop` and add `Hidden=true` under `[Desktop Entry]`.
 
 ## Development
 
@@ -64,6 +70,6 @@ go vet ./...
 
 Performance benchmarks and baseline: [`benchmarks/README.md`](benchmarks/README.md).
 
-Every push to `main` publishes an APT release after tests pass. Commit messages determine the version: `feat:` bumps minor, `BREAKING CHANGE:` or `!:` bumps major, and other changes bump patch. Check and rerun **Publish APT repository** in GitHub Actions if publication fails. Do not casually change published tags, `gh-pages`, or the signing key; existing installations rely on them.
+Every push to `main` with a newer `VERSION` file publishes a release after tests pass: DEB, RPM, AppImage and checksums land on the same GitHub Release, and the signed APT repository updates. The version comes from the `VERSION` file (always semver, always newer than the published tag); a push without a version bump publishes nothing. If a release fails, check and rerun **Publish Linux release** in GitHub Actions; retries are safe while the tag still points at the same commit. Do not casually change published tags, `gh-pages`, or the signing key; existing installations rely on them.
 
 Licensed under the [MIT License](LICENSE).
