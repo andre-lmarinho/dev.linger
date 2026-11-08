@@ -9,17 +9,21 @@ passphrase_file=$4
 mkdir -p "$repo/pool" "$repo/dists/stable/main/binary-amd64"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/package/DEBIAN" "$tmp/package/usr/bin" "$tmp/package/etc/xdg/autostart"
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o "$tmp/package/usr/bin/devlinger" .
-cat > "$tmp/package/etc/xdg/autostart/devlinger.desktop" <<'EOF'
-[Desktop Entry]
-Name=DevLinger
-Comment=Linux system tray monitor for local development services
-Exec=devlinger
-Type=Application
-Categories=System;Monitor;
-Hidden=false
-EOF
+mkdir -p \
+  "$tmp/package/DEBIAN" \
+  "$tmp/package/usr/bin" \
+  "$tmp/package/etc/xdg/autostart" \
+  "$tmp/package/usr/share/applications"
+
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+  go build -trimpath -ldflags='-s -w' \
+  -o "$tmp/package/usr/bin/devlinger" .
+
+install -m 644 scripts/devlinger.desktop \
+  "$tmp/package/etc/xdg/autostart/devlinger.desktop"
+
+install -m 644 scripts/devlinger.desktop \
+  "$tmp/package/usr/share/applications/devlinger.desktop"
 cat > "$tmp/package/DEBIAN/control" <<EOF
 Package: devlinger
 Version: $version
