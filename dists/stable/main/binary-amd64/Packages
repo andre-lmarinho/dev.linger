@@ -53,3 +53,14 @@ SHA1: 91ab81b668ee4c8417f440866f68a775094ce8e6
 SHA256: 094694257ee7985f9c93f60b9b8898695f66fe9c0c9007eab97a164b2eb440e4
 Description: Linux system tray monitor for local development services
 
+Package: devlinger
+Version: 0.3.1
+Architecture: amd64
+Maintainer: DevLinger contributors
+Filename: pool/devlinger_0.3.1_amd64.deb
+Size: 2679980
+MD5sum: 36bd5d691f3fc63b739a04ab9443411a
+SHA1: f856d6ef404976c1f6189fd703d0e6e653dfcb76
+SHA256: f50a316cf2f5c4b9d11bf39f0ac77412bd8bb49dc4d6f160b1d128c534a60e62
+Description: Linux system tray monitor for local development services
+
