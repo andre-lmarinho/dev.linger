@@ -1,4 +1,5 @@
-name: Publish APT repository
+
+name: Publish Linux release
 
 on:
   push:
@@ -11,50 +12,284 @@ permissions:
   id-token: write
 
 concurrency:
-  group: apt-release
+  group: linux-release
   cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+
+    outputs:
+      should_release: ${{ steps.version.outputs.should_release }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+
+      - name: Check release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version=$(cat VERSION)
+
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid VERSION: $version" >&2
+            exit 1
+          fi
+
+          tag="v$version"
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+          latest=$(
+            git tag --list 'v*' |
+              grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' |
+              sort -V |
+              tail -1 || true
+          )
+
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            tagged_sha=$(git rev-parse "$tag^{commit}")
+
+            if [[ "$tagged_sha" == "$GITHUB_SHA" ]]; then
+              echo "Retrying release $tag"
+              echo "should_release=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "$tag is already published."
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
+            fi
+
+            exit 0
+          fi
+
+          if [[ -n "$latest" ]]; then
+            newest=$(printf '%s\n' "$latest" "$tag" | sort -V | tail -1)
+
+            if [[ "$newest" != "$tag" ]]; then
+              echo "VERSION is older than the latest tag: $latest" >&2
+              exit 1
+            fi
+          fi
+
+          echo "Publishing new version $tag"
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Go
+        if: steps.version.outputs.should_release == 'true'
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: dbus-run-session -- go test -race ./...
-      - run: go vet ./...
-      - run: sudo apt-get update && sudo apt-get install -y apt-utils
-      - name: Test packaging and versioning
+
+      - name: Test
+        if: steps.version.outputs.should_release == 'true'
+        run: |
+          dbus-run-session -- go test -race ./...
+          go vet ./...
+
+      - name: Install APT tooling
+        if: steps.version.outputs.should_release == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apt-utils
+
+      - name: Test packaging
+        if: steps.version.outputs.should_release == 'true'
         run: scripts/test-release.sh
-      - name: Publish signed repository
+
+      - name: Publish signed APT repository and tag
+        if: steps.version.outputs.should_release == 'true'
         env:
           SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
           SIGNING_PASSPHRASE: ${{ secrets.APT_SIGNING_PASSPHRASE }}
         run: scripts/publish-apt.sh
+
   deploy:
     needs: publish
+    if: needs.publish.outputs.should_release == 'true'
     runs-on: ubuntu-latest
+
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout APT repository
+        uses: actions/checkout@v4
         with:
           ref: gh-pages
-      - uses: actions/upload-pages-artifact@v3
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
           path: .
-      - uses: actions/deploy-pages@v4
+
+      - name: Deploy GitHub Pages
+        uses: actions/deploy-pages@v4
         id: deployment
-      - name: Create release notes
+
+  packages:
+    needs: publish
+    if: needs.publish.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout released version
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binary
+        run: |
+          mkdir -p dist
+
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath -ldflags="-s -w" \
+            -o dist/devlinger .
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm desktop-file-utils
+
+      - name: Install nFPM
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.0
+
+      - name: Download appimagetool
+        run: |
+          curl --fail --location --retry 3 \
+            --output /tmp/appimagetool.AppImage \
+            https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage
+
+          chmod +x /tmp/appimagetool.AppImage
+
+      - name: Build RPM
         env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ github.sha }}
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          "$(go env GOPATH)/bin/nfpm" package \
+            --config packaging/nfpm.yaml \
+            --packager rpm \
+            --target dist/
+
+      - name: Build AppImage
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+          ARCH: x86_64
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: |
+          bash scripts/build-appdir.sh
+
+          /tmp/appimagetool.AppImage \
+            dist/DevLinger.AppDir \
+            "dist/DevLinger-${VERSION}-x86_64.AppImage"
+
+      - name: Retrieve published DEB
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          git fetch origin gh-pages
+
+          git show \
+            "FETCH_HEAD:pool/devlinger_${VERSION}_amd64.deb" \
+            > "dist/devlinger_${VERSION}_amd64.deb"
+
+      - name: Verify artifacts
+        shell: bash
         run: |
           set -euo pipefail
-          tag=$(git ls-remote --tags origin | awk -v sha="$SHA" '$1 == sha && $2 ~ /refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+$/ {sub("refs/tags/", "", $2); print $2}' | sort -V | tail -1)
-          test -n "$tag"
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --generate-notes
+
+          dpkg-deb --info dist/*.deb
+          rpm -qpl dist/*.rpm
+
+          appimage=(dist/DevLinger-*.AppImage)
+          test "${#appimage[@]}" -eq 1
+
+          chmod +x "${appimage[0]}"
+
+          cd dist
+
+          "./$(basename "${appimage[0]}")" --appimage-extract
+
+          test -x squashfs-root/usr/bin/devlinger
+          test -e squashfs-root/AppRun
+          test -e squashfs-root/io.github.devlinger.DevLinger.desktop
+          test -e squashfs-root/io.github.devlinger.DevLinger.svg
+          test -e squashfs-root/usr/share/metainfo/io.github.devlinger.DevLinger.metainfo.xml
+
+          rm -rf squashfs-root DevLinger.AppDir devlinger
+
+          sha256sum ./*.deb ./*.rpm ./*.AppImage > SHA256SUMS
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.AppImage
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  release:
+    needs: [publish, deploy, packages]
+    if: needs.publish.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-release
+          path: dist
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.publish.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --verify-tag \
+              --generate-notes \
+              --draft
+          fi
+
+          gh release upload "$TAG" \
+            dist/*.deb \
+            dist/*.rpm \
+            dist/*.AppImage \
+            dist/SHA256SUMS \
+            --clobber
+
+  finalize:
+    needs: [publish, release]
+    if: needs.publish.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.publish.outputs.tag }}
+        run: |
+          gh release edit "$TAG" --draft=false

@@ -9,6 +9,16 @@ permissions:
   contents: read
 
 jobs:
+  workflow-lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate GitHub Actions workflows
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
   rpm:
     runs-on: ubuntu-latest
 
@@ -37,7 +47,7 @@ jobs:
 
       - name: Build RPM
         run: |
-          VERSION=$(scripts/next-version.sh)
+          VERSION=$(cat VERSION)
           export VERSION
 
           "$(go env GOPATH)/bin/nfpm" package \
@@ -145,10 +155,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y desktop-file-utils
-          
+
       - name: Build AppImage
         run: |
-          VERSION=$(scripts/next-version.sh)
+          VERSION=$(cat VERSION)
           export VERSION
           export ARCH=x86_64
           export APPIMAGE_EXTRACT_AND_RUN=1
