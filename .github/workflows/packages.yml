@@ -58,3 +58,52 @@ jobs:
           name: devlinger-rpm
           path: dist/*.rpm
           if-no-files-found: error
+
+  aur:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+
+    steps:
+      - name: Install build dependencies
+        run: pacman -Sy --noconfirm --needed go git
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare PR source archive
+        shell: bash
+        run: |
+          mkdir -p /tmp/devlinger-aur
+
+          tar \
+            --exclude=.git \
+            --transform='s|^\./|dev.linger-0.0.0/|' \
+            -czf /tmp/devlinger-aur/devlinger-0.0.0.tar.gz \
+            .
+
+          checksum=$(sha256sum \
+            /tmp/devlinger-aur/devlinger-0.0.0.tar.gz |
+            cut -d ' ' -f 1)
+
+          sed \
+            -e 's/@VERSION@/0.0.0/g' \
+            -e "s/@SHA256@/$checksum/g" \
+            -e 's|source=.*|source=("devlinger-0.0.0.tar.gz")|' \
+            packaging/aur/PKGBUILD.in \
+            > /tmp/devlinger-aur/PKGBUILD
+
+      - name: Build Arch package
+        shell: bash
+        run: |
+          useradd --create-home builder
+          chown -R builder:builder /tmp/devlinger-aur
+
+          runuser -u builder -- \
+            bash -c 'cd /tmp/devlinger-aur && makepkg --noconfirm --nodeps'
+
+      - name: Inspect Arch package
+        shell: bash
+        run: |
+          pacman -Qip /tmp/devlinger-aur/*.pkg.tar.zst
+          pacman -Qlp /tmp/devlinger-aur/*.pkg.tar.zst
