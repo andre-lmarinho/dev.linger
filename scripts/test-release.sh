@@ -102,6 +102,12 @@ assets="$root/packaging/linux"
 desktop-file-validate "$assets/$desktop"
 appstreamcli validate --strict "$assets/$metainfo"
 
+# A stale <releases> block would pass the validator above undetected.
+grep -q "<release version=\"$version\"" "$assets/$metainfo" || {
+  echo "metainfo has no <release> entry for VERSION $version" >&2
+  exit 1
+}
+
 for destination in \
   "etc/xdg/autostart/$desktop" \
   "usr/share/applications/$desktop"
