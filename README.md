@@ -16,9 +16,17 @@ Unknown listeners are omitted. Docker resource usage and uptime are not collecte
 
 You need Linux, a D-Bus session and a StatusNotifierItem-compatible tray. On GNOME, an AppIndicator extension may be required. Docker is optional; access to its socket grants powerful privileges.
 
-### Download
+### Install on Debian or Ubuntu (amd64)
 
-When available, download the Linux amd64 binary or Debian package from [GitHub Releases](https://github.com/andre-lmarinho/dev.linger/releases). The Debian package installs the `devlinger` executable; it does not add an application launcher.
+After the APT repository is published, install with:
+
+```sh
+curl -fsSL https://andre-lmarinho.github.io/dev.linger/install.sh | bash
+```
+
+This downloads and runs the [installation script](scripts/install.sh), which requires `curl`, `gpg` and `sudo`, configures the signed APT repository and installs DevLinger. Review the script before running it if you prefer. Updates are installed with `sudo apt update && sudo apt upgrade`. Restart DevLinger (or log out and back in) to run the new version. To remove the application, run `sudo apt remove devlinger`; remove `/etc/apt/sources.list.d/devlinger.list` and `/usr/share/keyrings/devlinger.gpg` separately if you no longer want this repository.
+
+Already installed the `v0.1.0` `.deb`? Run the same installation command once to add the repository and upgrade the package.
 
 ### Build from source
 
@@ -29,7 +37,7 @@ go build -o devlinger .
 ./devlinger
 ```
 
-Open the tray icon to see services. Select **Quit** to exit.
+Open the tray icon to see services. The tray menu is read-only.
 
 ## Detection
 
@@ -45,7 +53,7 @@ DevLinger uses an absolute Unix `DOCKER_HOST` when set. Otherwise it checks `$XD
 
 ## Autostart
 
-Debian package installations enable autostart by default (`/etc/xdg/autostart/devlinger.desktop`) so DevLinger starts with your login session. To disable it, remove that file: `sudo rm /etc/xdg/autostart/devlinger.desktop`.
+Debian package installations enable autostart by default (`/etc/xdg/autostart/devlinger.desktop`) so DevLinger starts with your login session. To disable it for your user, copy that file to `~/.config/autostart/devlinger.desktop` and change `Hidden=false` to `Hidden=true` in the copy.
 
 ## Development
 
@@ -55,5 +63,7 @@ go vet ./...
 ```
 
 Performance benchmarks and baseline: [`benchmarks/README.md`](benchmarks/README.md).
+
+Every push to `main` publishes an APT release after tests pass. Commit messages determine the version: `feat:` bumps minor, `BREAKING CHANGE:` or `!:` bumps major, and other changes bump patch. Check and rerun **Publish APT repository** in GitHub Actions if publication fails. Do not casually change published tags, `gh-pages`, or the signing key; existing installations rely on them.
 
 Licensed under the [MIT License](LICENSE).

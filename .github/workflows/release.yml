@@ -1,48 +1,60 @@
-name: Release
+name: Publish APT repository
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: apt-release
+  cancel-in-progress: false
 
 jobs:
-  release:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: go test ./...
-      - name: Build binary and Debian package
-        shell: bash
+      - run: dbus-run-session -- go test -race ./...
+      - run: go vet ./...
+      - run: sudo apt-get update && sudo apt-get install -y apt-utils
+      - name: Test packaging and versioning
+        run: scripts/test-release.sh
+      - name: Publish signed repository
+        env:
+          SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+          SIGNING_PASSPHRASE: ${{ secrets.APT_SIGNING_PASSPHRASE }}
+        run: scripts/publish-apt.sh
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - uses: actions/deploy-pages@v4
+        id: deployment
+      - name: Create release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          version="${GITHUB_REF_NAME#v}"
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o devlinger-linux-amd64 .
-          mkdir -p package/DEBIAN package/usr/bin package/etc/xdg/autostart
-          install -m 755 devlinger-linux-amd64 package/usr/bin/devlinger
-          cat > package/etc/xdg/autostart/devlinger.desktop <<EOF
-          [Desktop Entry]
-          Name=DevLinger
-          Comment=Linux system tray monitor for local development services
-          Exec=devlinger
-          Type=Application
-          Categories=System;Monitor;
-          Hidden=false
-          EOF
-          cat > package/DEBIAN/control <<EOF
-          Package: devlinger
-          Version: ${version}
-          Architecture: amd64
-          Maintainer: DevLinger contributors
-          Description: Linux system tray monitor for local development services
-          EOF
-          dpkg-deb --build --root-owner-group package "devlinger_${version}_amd64.deb"
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            devlinger-linux-amd64
-            devlinger_*_amd64.deb
+          tag=$(git ls-remote --tags origin | awk -v sha="$SHA" '$1 == sha && $2 ~ /refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+$/ {sub("refs/tags/", "", $2); print $2}' | sort -V | tail -1)
+          test -n "$tag"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --generate-notes
