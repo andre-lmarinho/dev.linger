@@ -36,50 +36,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          version=$(cat VERSION)
+          tags="$RUNNER_TEMP/existing-tags"
 
-          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Invalid VERSION: $version" >&2
-            exit 1
-          fi
+          git for-each-ref 'refs/tags/v*' \
+            --format='%(refname:short) %(objectname)' |
+            grep -E '^v[0-9]+\.[0-9]+\.[0-9]+ ' > "$tags" || true
 
-          tag="v$version"
-
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
-          latest=$(
-            git tag --list 'v*' |
-              grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' |
-              sort -V |
-              tail -1 || true
-          )
-
-          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-            tagged_sha=$(git rev-parse "$tag^{commit}")
-
-            if [[ "$tagged_sha" == "$GITHUB_SHA" ]]; then
-              echo "Retrying release $tag"
-              echo "should_release=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "$tag is already published."
-              echo "should_release=false" >> "$GITHUB_OUTPUT"
-            fi
-
-            exit 0
-          fi
-
-          if [[ -n "$latest" ]]; then
-            newest=$(printf '%s\n' "$latest" "$tag" | sort -V | tail -1)
-
-            if [[ "$newest" != "$tag" ]]; then
-              echo "VERSION is older than the latest tag: $latest" >&2
-              exit 1
-            fi
-          fi
-
-          echo "Publishing new version $tag"
-          echo "should_release=true" >> "$GITHUB_OUTPUT"
+          scripts/release-guard.sh \
+            "$(cat VERSION)" "$GITHUB_SHA" "$tags" >> "$GITHUB_OUTPUT"
 
       - name: Setup Go
         if: steps.version.outputs.should_release == 'true'
@@ -97,7 +61,7 @@ jobs:
         if: steps.version.outputs.should_release == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y apt-utils
+          sudo apt-get install -y apt-utils appstream desktop-file-utils
 
       - name: Test packaging
         if: steps.version.outputs.should_release == 'true'
