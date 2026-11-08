@@ -11,9 +11,19 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-type watcher struct{}
+type watcher struct {
+	registered chan string
+}
 
-func (watcher) RegisterStatusNotifierItem(string) *dbus.Error { return nil }
+func (w watcher) RegisterStatusNotifierItem(name string) *dbus.Error {
+	if w.registered != nil {
+		select {
+		case w.registered <- name:
+		default:
+		}
+	}
+	return nil
+}
 
 func TestFormatServiceCompact(t *testing.T) {
 	s := monitor.Service{Name: "Vite", Project: "/home/user/shop", PID: 42, Branch: "main", Uptime: 20 * time.Minute, Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}, {Address: "::1", Port: 3000}}}
@@ -258,5 +268,82 @@ func TestNewStopsWaitingWhenContextCanceled(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("New did not stop after context cancellation")
+	}
+}
+
+func TestTrayRegistersAfterWatcherRestart(t *testing.T) {
+	if os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" {
+		t.Skip("no session bus")
+	}
+
+	const watcherName = "org.kde.StatusNotifierWatcher"
+	const watcherPath = "/StatusNotifierWatcher"
+
+	first, err := dbus.ConnectSessionBus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+
+	second, err := dbus.ConnectSessionBus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer second.Close()
+
+	registeredFirst := make(chan string, 1)
+	registeredSecond := make(chan string, 1)
+
+	startWatcher := func(conn *dbus.Conn, registered chan string) {
+		t.Helper()
+
+		if err := conn.Export(
+			watcher{registered: registered},
+			watcherPath,
+			watcherName,
+		); err != nil {
+			t.Fatal(err)
+		}
+
+		reply, err := conn.RequestName(
+			watcherName,
+			dbus.NameFlagDoNotQueue,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if reply != dbus.RequestNameReplyPrimaryOwner {
+			t.Fatal("watcher name already owned")
+		}
+	}
+
+	startWatcher(first, registeredFirst)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tray, err := New(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tray.Close()
+
+	select {
+	case <-registeredFirst:
+	case <-time.After(time.Second):
+		t.Fatal("initial watcher did not receive registration")
+	}
+
+	if _, err := first.ReleaseName(watcherName); err != nil {
+		t.Fatal(err)
+	}
+
+	startWatcher(second, registeredSecond)
+
+	select {
+	case <-registeredSecond:
+		// Expected: DevLinger registered again.
+	case <-time.After(2 * time.Second):
+		t.Fatal("DevLinger did not register after watcher restart")
 	}
 }
