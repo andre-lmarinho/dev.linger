@@ -12,13 +12,17 @@ import (
 )
 
 func main() {
-	t, err := tray.New()
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		syscall.SIGINT,
+		syscall.SIGTERM,
+	)
+	defer stop()
+	t, err := tray.New(ctx)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer t.Close()
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
@@ -40,7 +44,5 @@ func main() {
 			}
 		}
 	}()
-	select {
-	case <-ctx.Done():
-	}
+	<-ctx.Done()
 }

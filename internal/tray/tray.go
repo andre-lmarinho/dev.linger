@@ -1,7 +1,10 @@
 package tray
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -24,6 +27,11 @@ type Tray struct {
 	mu       sync.RWMutex
 	services []monitor.Service
 	revision uint32
+
+	// Lifecycle of the D-Bus watcher observer.
+	cancel    context.CancelFunc
+	done      chan struct{}
+	closeOnce sync.Once
 }
 
 type pixmap struct {
@@ -46,7 +54,112 @@ type event struct {
 	Timestamp uint32
 }
 
-func New() (*Tray, error) {
+func isWatcherUnavailable(err error) bool {
+	var dbusErr dbus.Error
+
+	if !errors.As(err, &dbusErr) {
+		var ptr *dbus.Error
+		if !errors.As(err, &ptr) || ptr == nil {
+			return false
+		}
+		dbusErr = *ptr
+	}
+
+	switch dbusErr.Name {
+	case "org.freedesktop.DBus.Error.ServiceUnknown",
+		"org.freedesktop.DBus.Error.NameHasNoOwner":
+		return true
+	default:
+		return false
+	}
+}
+
+func waitForWatcher(ctx context.Context, conn *dbus.Conn, name string) error {
+	watcher := conn.Object(
+		"org.kde.StatusNotifierWatcher",
+		"/StatusNotifierWatcher",
+	)
+
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		call := watcher.CallWithContext(
+			ctx,
+			"org.kde.StatusNotifierWatcher.RegisterStatusNotifierItem",
+			0,
+			name,
+		)
+
+		if call.Err == nil {
+			return nil
+		}
+
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		if !isWatcherUnavailable(call.Err) {
+			return fmt.Errorf("watcher registration failed: %w", call.Err)
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func (t *Tray) watchWatcher(
+	ctx context.Context,
+	signals <-chan *dbus.Signal,
+	name string,
+) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case signal, ok := <-signals:
+			if !ok {
+				return
+			}
+
+			if signal == nil ||
+				signal.Name != "org.freedesktop.DBus.NameOwnerChanged" ||
+				len(signal.Body) != 3 {
+				continue
+			}
+
+			service, ok := signal.Body[0].(string)
+			if !ok || service != "org.kde.StatusNotifierWatcher" {
+				continue
+			}
+
+			newOwner, ok := signal.Body[2].(string)
+			if !ok || newOwner == "" {
+				continue
+			}
+
+			call := t.conn.Object(
+				"org.kde.StatusNotifierWatcher",
+				"/StatusNotifierWatcher",
+			).CallWithContext(
+				ctx,
+				"org.kde.StatusNotifierWatcher.RegisterStatusNotifierItem",
+				0,
+				name,
+			)
+
+			if call.Err != nil && ctx.Err() == nil {
+				log.Printf("re-register system tray indicator: %v", call.Err)
+			}
+		}
+	}
+}
+
+func New(ctx context.Context) (*Tray, error) {
 	conn, err := dbus.ConnectSessionBus()
 	if err != nil {
 		return nil, err
@@ -83,10 +196,45 @@ func New() (*Tray, error) {
 	if err != nil {
 		return fail(err)
 	}
-	call := conn.Object("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher").Call("org.kde.StatusNotifierWatcher.RegisterStatusNotifierItem", 0, name)
-	if call.Err != nil {
-		return fail(fmt.Errorf("register system tray indicator: %w", call.Err))
+	signals := make(chan *dbus.Signal, 16)
+
+	matchOptions := []dbus.MatchOption{
+		dbus.WithMatchOption("sender", "org.freedesktop.DBus"),
+		dbus.WithMatchOption("interface", "org.freedesktop.DBus"),
+		dbus.WithMatchOption("member", "NameOwnerChanged"),
+		dbus.WithMatchOption("arg0", "org.kde.StatusNotifierWatcher"),
 	}
+
+	conn.Signal(signals)
+
+	if err := conn.AddMatchSignal(matchOptions...); err != nil {
+		conn.RemoveSignal(signals)
+		return fail(fmt.Errorf("subscribe to watcher changes: %w", err))
+	}
+
+	cleanupSignals := func() {
+		if err := conn.RemoveMatchSignal(matchOptions...); err != nil {
+			log.Printf("remove watcher signal match: %v", err)
+		}
+		conn.RemoveSignal(signals)
+	}
+
+	if err := waitForWatcher(ctx, conn, name); err != nil {
+		cleanupSignals()
+		return fail(fmt.Errorf("register system tray indicator: %w", err))
+	}
+
+	watchCtx, cancel := context.WithCancel(ctx)
+	t.cancel = cancel
+	t.done = make(chan struct{})
+
+	go func() {
+		defer close(t.done)
+		defer cleanupSignals()
+
+		t.watchWatcher(watchCtx, signals, name)
+	}()
+
 	return t, nil
 }
 
@@ -125,7 +273,18 @@ func (t *Tray) Update(services []monitor.Service, scanErr error) {
 	t.conn.Emit(menuPath, "com.canonical.dbusmenu.LayoutUpdated", rev, int32(0))
 }
 
-func (t *Tray) Close()                                     { t.conn.Close() }
+func (t *Tray) Close() {
+	t.closeOnce.Do(func() {
+		if t.cancel != nil {
+			t.cancel()
+		}
+		if t.done != nil {
+			<-t.done
+		}
+		t.conn.Close()
+	})
+}
+
 func (t *Tray) Activate(int32, int32) *dbus.Error          { return nil }
 func (t *Tray) SecondaryActivate(int32, int32) *dbus.Error { return nil }
 func (t *Tray) ContextMenu(int32, int32) *dbus.Error       { return nil }
