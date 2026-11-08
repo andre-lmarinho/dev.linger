@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=DevLinger
+Comment=Linux system tray monitor for local development services
+Exec=/usr/bin/devlinger
+Terminal=false
+Categories=System;Monitor;

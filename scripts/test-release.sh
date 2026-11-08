@@ -46,6 +46,19 @@ apt-get "${opts[@]}" update >/dev/null
 apt-get "${opts[@]}" -s upgrade | grep -q 'Inst devlinger \[0.1.0\] (0.1.1 '
 (cd "$tmp" && apt-get "${opts[@]}" download devlinger >/dev/null)
 [[ $(dpkg-deb -f "$tmp/devlinger_0.1.1_amd64.deb" Version) == 0.1.1 ]]
+package="$tmp/devlinger_0.1.1_amd64.deb"
+package_root="$tmp/package-root"
+
+mkdir -p "$package_root"
+dpkg-deb -x "$package" "$package_root"
+
+for destination in \
+  etc/xdg/autostart/devlinger.desktop \
+  usr/share/applications/devlinger.desktop
+do
+  cmp "$root/scripts/devlinger.desktop" "$package_root/$destination"
+done
+
 cmp "$root/scripts/install.sh" "$tmp/repo/install.sh"
 mkdir "$tmp/mock"
 cat > "$tmp/mock/dpkg" <<'EOF'
