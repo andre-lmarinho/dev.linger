@@ -141,6 +141,11 @@ jobs:
 
           chmod +x /tmp/appimagetool.AppImage
 
+      - name: Install AppImage build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y desktop-file-utils
+          
       - name: Build AppImage
         run: |
           VERSION=$(scripts/next-version.sh)
