@@ -1,0 +1,11 @@
+Package: devlinger
+Version: 0.2.0
+Architecture: amd64
+Maintainer: DevLinger contributors
+Filename: pool/devlinger_0.2.0_amd64.deb
+Size: 2676686
+MD5sum: 71ddd23994474ec9e745c7850025722d
+SHA1: b2547a781748f48d21012c8820ef7240803fbb89
+SHA256: 62c37d5b54e48c24add2b8dfd600a8354a01aa4e7ea8a50997213faba791197c
+Description: Linux system tray monitor for local development services
+

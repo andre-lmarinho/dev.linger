@@ -1,0 +1,23 @@
+Architectures: amd64
+Codename: stable
+Components: main
+Date: Sun, 08 Nov 2026 03:33:03 +0000
+Label: DevLinger
+Origin: DevLinger
+Suite: stable
+MD5Sum:
+ 6571c13105b60556e16720a97abc4344              142 Release
+ 661c16fadc5f8449b30088f71751e932              376 main/binary-amd64/Packages
+ 318e6b3f41ecd61dadcc5909f7db1f12              296 main/binary-amd64/Packages.gz
+SHA1:
+ f91fb999a94a17b2559a8627a714a8980efd5979              142 Release
+ c3aea650c5146678c3dc4e63bf725173274c1a6b              376 main/binary-amd64/Packages
+ 0cb0adc60f4ec9a7919d92d5f3a86545c21d37f6              296 main/binary-amd64/Packages.gz
+SHA256:
+ b361539ef9cf97436f23899e8df0272819e5f9ba640d4e92ce95e10c6a763135              142 Release
+ 876180d79b2d7151ff08d0eb61d7cc0ded0ffb7835b574705d7bd7eb86b52240              376 main/binary-amd64/Packages
+ a4c0de84ebda029d06ef83c82c4e59bb75aedc2f97b292b6b6f410056d69534d              296 main/binary-amd64/Packages.gz
+SHA512:
+ 03934e46fb4b0b5a0bc7b1fb72f169d55a31f2087209b6ae1a0fdbfbb1c3b24a66130ccdb5bb0dc5bfb54e50ebe30084d98a0cf6836473c37bc320a41483ad1e              142 Release
+ 3b18a98e89f592695df61dd5fd3c8575003ce40d8cb185735f8f958945e4fc6412c35810afa9d25b61e9c3dbff81a9339324ece5a8049833e7ba4c8f3d72c83c              376 main/binary-amd64/Packages
+ f2077421bbaedc8d40a24721661d5235c094b98f47ccfdfa6c782e4079c353809a6903eee85fd16bb999ccdf62e28c9579b4c03b4187761c11b13ff1c7d0d124              296 main/binary-amd64/Packages.gz
