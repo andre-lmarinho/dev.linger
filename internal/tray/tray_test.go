@@ -463,3 +463,69 @@ func TestNewFailsOnPermanentWatcherError(t *testing.T) {
 		t.Fatalf("unexpected D-Bus error: %s", dbusErr.Name)
 	}
 }
+
+func TestIsWatcherAcquired(t *testing.T) {
+	tests := []struct {
+		name   string
+		signal *dbus.Signal
+		want   bool
+	}{
+		{
+			name: "nil signal",
+		},
+		{
+			name: "wrong signal",
+			signal: &dbus.Signal{
+				Name: "org.freedesktop.DBus.NameLost",
+				Body: []interface{}{
+					"org.kde.StatusNotifierWatcher", "", ":1.42",
+				},
+			},
+		},
+		{
+			name: "invalid body",
+			signal: &dbus.Signal{
+				Name: "org.freedesktop.DBus.NameOwnerChanged",
+				Body: []interface{}{"org.kde.StatusNotifierWatcher"},
+			},
+		},
+		{
+			name: "different service",
+			signal: &dbus.Signal{
+				Name: "org.freedesktop.DBus.NameOwnerChanged",
+				Body: []interface{}{"org.example.Other", "", ":1.42"},
+			},
+		},
+		{
+			name: "watcher lost",
+			signal: &dbus.Signal{
+				Name: "org.freedesktop.DBus.NameOwnerChanged",
+				Body: []interface{}{"org.kde.StatusNotifierWatcher", ":1.41", ""},
+			},
+		},
+		{
+			name: "watcher acquired",
+			signal: &dbus.Signal{
+				Name: "org.freedesktop.DBus.NameOwnerChanged",
+				Body: []interface{}{"org.kde.StatusNotifierWatcher", "", ":1.42"},
+			},
+			want: true,
+		},
+		{
+			name: "watcher replaced",
+			signal: &dbus.Signal{
+				Name: "org.freedesktop.DBus.NameOwnerChanged",
+				Body: []interface{}{"org.kde.StatusNotifierWatcher", ":1.41", ":1.42"},
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isWatcherAcquired(tt.signal); got != tt.want {
+				t.Errorf("isWatcherAcquired() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

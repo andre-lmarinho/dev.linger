@@ -74,14 +74,32 @@ func isWatcherUnavailable(err error) bool {
 	}
 }
 
-func waitForWatcher(ctx context.Context, conn *dbus.Conn, name string) error {
+func isWatcherAcquired(signal *dbus.Signal) bool {
+	if signal == nil ||
+		signal.Name != "org.freedesktop.DBus.NameOwnerChanged" ||
+		len(signal.Body) != 3 {
+		return false
+	}
+
+	service, ok := signal.Body[0].(string)
+	if !ok || service != "org.kde.StatusNotifierWatcher" {
+		return false
+	}
+
+	newOwner, ok := signal.Body[2].(string)
+	return ok && newOwner != ""
+}
+
+func waitForWatcher(
+	ctx context.Context,
+	conn *dbus.Conn,
+	signals <-chan *dbus.Signal,
+	name string,
+) error {
 	watcher := conn.Object(
 		"org.kde.StatusNotifierWatcher",
 		"/StatusNotifierWatcher",
 	)
-
-	ticker := time.NewTicker(250 * time.Millisecond)
-	defer ticker.Stop()
 
 	for {
 		call := watcher.CallWithContext(
@@ -106,7 +124,15 @@ func waitForWatcher(ctx context.Context, conn *dbus.Conn, name string) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-ticker.C:
+
+		case signal, ok := <-signals:
+			if !ok {
+				return fmt.Errorf("watcher signal channel closed")
+			}
+
+			if !isWatcherAcquired(signal) {
+				continue
+			}
 		}
 	}
 }
@@ -126,19 +152,7 @@ func (t *Tray) watchWatcher(
 				return
 			}
 
-			if signal == nil ||
-				signal.Name != "org.freedesktop.DBus.NameOwnerChanged" ||
-				len(signal.Body) != 3 {
-				continue
-			}
-
-			service, ok := signal.Body[0].(string)
-			if !ok || service != "org.kde.StatusNotifierWatcher" {
-				continue
-			}
-
-			newOwner, ok := signal.Body[2].(string)
-			if !ok || newOwner == "" {
+			if !isWatcherAcquired(signal) {
 				continue
 			}
 
@@ -219,7 +233,7 @@ func New(ctx context.Context) (*Tray, error) {
 		conn.RemoveSignal(signals)
 	}
 
-	if err := waitForWatcher(ctx, conn, name); err != nil {
+	if err := waitForWatcher(ctx, conn, signals, name); err != nil {
 		cleanupSignals()
 		return fail(fmt.Errorf("register system tray indicator: %w", err))
 	}
