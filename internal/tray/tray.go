@@ -1,6 +1,7 @@
 package tray
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -46,7 +47,41 @@ type event struct {
 	Timestamp uint32
 }
 
-func New() (*Tray, error) {
+func waitForWatcher(ctx context.Context, conn *dbus.Conn, name string) error {
+	watcher := conn.Object(
+		"org.kde.StatusNotifierWatcher",
+		"/StatusNotifierWatcher",
+	)
+
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		call := watcher.CallWithContext(
+			ctx,
+			"org.kde.StatusNotifierWatcher.RegisterStatusNotifierItem",
+			0,
+			name,
+		)
+
+		if call.Err == nil {
+			return nil
+		}
+
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+
+func New(ctx context.Context) (*Tray, error) {
 	conn, err := dbus.ConnectSessionBus()
 	if err != nil {
 		return nil, err
@@ -83,9 +118,8 @@ func New() (*Tray, error) {
 	if err != nil {
 		return fail(err)
 	}
-	call := conn.Object("org.kde.StatusNotifierWatcher", "/StatusNotifierWatcher").Call("org.kde.StatusNotifierWatcher.RegisterStatusNotifierItem", 0, name)
-	if call.Err != nil {
-		return fail(fmt.Errorf("register system tray indicator: %w", call.Err))
+	if err := waitForWatcher(ctx, conn, name); err != nil {
+		return fail(fmt.Errorf("register system tray indicator: %w", err))
 	}
 	return t, nil
 }

@@ -1,6 +1,7 @@
 package tray
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -28,7 +29,7 @@ func BenchmarkUpdate(b *testing.B) {
 	if err := conn.Export(watcher{}, "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher"); err != nil {
 		b.Fatal(err)
 	}
-	t, err := New()
+	t, err := New(context.Background())
 	if err != nil {
 		b.Fatal(err)
 	}

@@ -1,6 +1,8 @@
 package tray
 
 import (
+	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -93,7 +95,7 @@ func TestMenuOverDBus(t *testing.T) {
 	if err := conn.Export(watcher{}, "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher"); err != nil {
 		t.Fatal(err)
 	}
-	tray, err := New()
+	tray, err := New(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,5 +162,101 @@ func TestMenuHasNoQuitNoAutostart(t *testing.T) {
 			}
 		}
 		walk(tray.root().Children)
+	}
+}
+
+func TestNewWaitsForWatcher(t *testing.T) {
+	if os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" {
+		t.Skip("no session bus")
+	}
+
+	conn, err := dbus.ConnectSessionBus()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	type result struct {
+		tray *Tray
+		err  error
+	}
+
+	done := make(chan result, 1)
+
+	go func() {
+		tray, err := New(ctx)
+		done <- result{tray, err}
+	}()
+
+	select {
+	case r := <-done:
+		if r.tray != nil {
+			r.tray.Close()
+		}
+		t.Fatalf("New returned before watcher became available: %v", r.err)
+	case <-time.After(100 * time.Millisecond):
+		// Expected: New is still waiting.
+	}
+
+	reply, err := conn.RequestName(
+		"org.kde.StatusNotifierWatcher",
+		dbus.NameFlagDoNotQueue,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply != dbus.RequestNameReplyPrimaryOwner {
+		t.Skip("watcher already running; use isolated D-Bus session")
+	}
+
+	if err := conn.Export(
+		watcher{},
+		"/StatusNotifierWatcher",
+		"org.kde.StatusNotifierWatcher",
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case r := <-done:
+		if r.err != nil {
+			t.Fatal(r.err)
+		}
+		defer r.tray.Close()
+	case <-ctx.Done():
+		t.Fatal("New did not register after watcher became available")
+	}
+}
+
+func TestNewStopsWaitingWhenContextCanceled(t *testing.T) {
+	if os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" {
+		t.Skip("no session bus")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan error, 1)
+
+	go func() {
+		tray, err := New(ctx)
+		if tray != nil {
+			tray.Close()
+		}
+		done <- err
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("New did not stop after context cancellation")
 	}
 }
