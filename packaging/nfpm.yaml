@@ -6,7 +6,7 @@ version_schema: semver
 
 maintainer: DevLinger contributors
 description: Monitor and stop local development services from the Linux system tray
-homepage: https://github.com/andre-lmarinho/dev.linger
+homepage: ${REPO_URL}
 license: MIT
 
 contents:
@@ -15,14 +15,18 @@ contents:
     file_info:
       mode: 0755
 
-  - src: packaging/linux/io.github.devlinger.DevLinger.desktop
-    dst: /usr/share/applications/io.github.devlinger.DevLinger.desktop
+  - src: dist/assets/usr/share/applications/${APPID}.desktop
+    dst: /usr/share/applications/${APPID}.desktop
+    expand: true
 
-  - src: packaging/linux/io.github.devlinger.DevLinger.desktop
-    dst: /etc/xdg/autostart/io.github.devlinger.DevLinger.desktop
+  - src: dist/assets/usr/share/applications/${APPID}.desktop
+    dst: /etc/xdg/autostart/${APPID}.desktop
+    expand: true
 
-  - src: packaging/linux/io.github.devlinger.DevLinger.metainfo.xml
-    dst: /usr/share/metainfo/io.github.devlinger.DevLinger.metainfo.xml
+  - src: dist/assets/usr/share/metainfo/${APPID}.metainfo.xml
+    dst: /usr/share/metainfo/${APPID}.metainfo.xml
+    expand: true
 
-  - src: packaging/linux/io.github.devlinger.DevLinger.svg
-    dst: /usr/share/icons/hicolor/scalable/apps/io.github.devlinger.DevLinger.svg
+  - src: dist/assets/usr/share/icons/hicolor/scalable/apps/${APPID}.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/${APPID}.svg
+    expand: true

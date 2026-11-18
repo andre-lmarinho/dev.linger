@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+source "$root/metadata.sh"
+
 if [[ "${GITHUB_REF:-}" != refs/heads/main ]]; then
   echo 'Publishing is restricted to main' >&2
   exit 1
@@ -15,7 +18,7 @@ printf '%s' "$SIGNING_KEY" | gpg --batch --import
 printf '%s' "$SIGNING_PASSPHRASE" > "$tmp/passphrase"
 chmod 600 "$tmp/passphrase"
 key=$(gpg --batch --with-colons --list-secret-keys | awk -F: '$1 == "sec" { primary=1; next } primary && $1 == "fpr" { print $10; primary=0 }')
-if [[ "$key" != A17FD32EBCB92EC0C06CBA8E1B2A90F1DB7748F8 ]]; then
+if [[ "$key" != "$GPG_FINGERPRINT" ]]; then
   echo 'Expected exactly the signing key used by the installer' >&2
   exit 1
 fi

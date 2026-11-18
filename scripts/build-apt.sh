@@ -6,32 +6,22 @@ repo=$2
 key=$3
 passphrase_file=$4
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+source "$root/metadata.sh"
+
 mkdir -p "$repo/pool" "$repo/dists/stable/main/binary-amd64"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-mkdir -p \
-  "$tmp/package/DEBIAN" \
-  "$tmp/package/usr/bin" \
-  "$tmp/package/etc/xdg/autostart" \
-  "$tmp/package/usr/share/applications" \
-  "$tmp/package/usr/share/metainfo" \
-  "$tmp/package/usr/share/icons/hicolor/scalable/apps"
+mkdir -p "$tmp/package/DEBIAN" "$tmp/package/usr/bin"
 
+cd "$root"
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
   go build -trimpath -ldflags='-s -w' \
   -o "$tmp/package/usr/bin/devlinger" .
 
-install -m 644 packaging/linux/io.github.devlinger.DevLinger.desktop \
-  "$tmp/package/etc/xdg/autostart/io.github.devlinger.DevLinger.desktop"
+"$root/scripts/expand-assets.sh" --autostart "$tmp/package"
 
-install -m 644 packaging/linux/io.github.devlinger.DevLinger.desktop \
-  "$tmp/package/usr/share/applications/io.github.devlinger.DevLinger.desktop"
-
-install -m 644 packaging/linux/io.github.devlinger.DevLinger.metainfo.xml \
-  "$tmp/package/usr/share/metainfo/io.github.devlinger.DevLinger.metainfo.xml"
-
-install -m 644 packaging/linux/io.github.devlinger.DevLinger.svg \
-  "$tmp/package/usr/share/icons/hicolor/scalable/apps/io.github.devlinger.DevLinger.svg"
 cat > "$tmp/package/DEBIAN/control" <<EOF
 Package: devlinger
 Version: $version
@@ -40,7 +30,8 @@ Maintainer: DevLinger contributors
 Description: Linux system tray monitor for local development services
 EOF
 dpkg-deb --build --root-owner-group "$tmp/package" "$repo/pool/devlinger_${version}_amd64.deb"
-install -m 644 scripts/install.sh "$repo/install.sh"
+sed -e "s|@PAGES_URL@|$PAGES_URL|g" -e "s|@GPG_FINGERPRINT@|$GPG_FINGERPRINT|g" \
+  "$root/scripts/install.sh.in" > "$repo/install.sh"
 (
   cd "$repo"
   dpkg-scanpackages --multiversion pool /dev/null > dists/stable/main/binary-amd64/Packages

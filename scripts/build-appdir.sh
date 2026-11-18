@@ -9,36 +9,26 @@ if [[ ! -f "$binary" ]]; then
   exit 1
 fi
 
-appid="io.github.devlinger.DevLinger"
-assets="packaging/linux"
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+source "$root/metadata.sh"
 
 rm -rf "$appdir"
-
-mkdir -p \
-  "$appdir/usr/bin" \
-  "$appdir/usr/share/applications" \
-  "$appdir/usr/share/metainfo" \
-  "$appdir/usr/share/icons/hicolor/scalable/apps"
+mkdir -p "$appdir/usr/bin"
 
 install -m 755 "$binary" "$appdir/usr/bin/devlinger"
 
+"$root/scripts/expand-assets.sh" "$appdir"
+
 # AppImage must not depend on an absolute /usr/bin path.
-sed 's|^Exec=/usr/bin/devlinger$|Exec=devlinger|' \
-  "$assets/$appid.desktop" \
-  > "$appdir/usr/share/applications/$appid.desktop"
-
-install -m 644 "$assets/$appid.metainfo.xml" \
-  "$appdir/usr/share/metainfo/$appid.metainfo.xml"
-
-install -m 644 "$assets/$appid.svg" \
-  "$appdir/usr/share/icons/hicolor/scalable/apps/$appid.svg"
+sed -i 's|^Exec=/usr/bin/devlinger$|Exec=devlinger|' \
+  "$appdir/usr/share/applications/$APPID.desktop"
 
 ln -s "usr/bin/devlinger" "$appdir/AppRun"
 
-ln -s "usr/share/applications/$appid.desktop" \
-  "$appdir/$appid.desktop"
+ln -s "usr/share/applications/$APPID.desktop" \
+  "$appdir/$APPID.desktop"
 
-ln -s "usr/share/icons/hicolor/scalable/apps/$appid.svg" \
-  "$appdir/$appid.svg"
+ln -s "usr/share/icons/hicolor/scalable/apps/$APPID.svg" \
+  "$appdir/$APPID.svg"
 
 echo "AppDir created: $appdir"

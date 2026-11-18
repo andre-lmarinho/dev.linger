@@ -2,6 +2,9 @@
 set -euo pipefail
 
 root=$(git rev-parse --show-toplevel)
+set -a
+source "$root/metadata.sh"
+set +a
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
@@ -94,16 +97,18 @@ mkdir -p "$package_root"
 
 dpkg-deb -x "$package" "$package_root"
 
-desktop="io.github.devlinger.DevLinger.desktop"
-metainfo="io.github.devlinger.DevLinger.metainfo.xml"
-assets="$root/packaging/linux"
+desktop="$APPID.desktop"
+metainfo="$APPID.metainfo.xml"
 
-# The launcher and catalog metadata shipped in every package format.
-desktop-file-validate "$assets/$desktop"
-appstreamcli validate --strict "$assets/$metainfo"
+# Expand the assets the same way every package format does, then validate
+# and compare them against what the package actually ships.
+"$root/scripts/expand-assets.sh" --autostart "$tmp/assets"
+
+desktop-file-validate "$tmp/assets/usr/share/applications/$desktop"
+appstreamcli validate --strict "$tmp/assets/usr/share/metainfo/$metainfo"
 
 # A stale <releases> block would pass the validator above undetected.
-grep -q "<release version=\"$version\"" "$assets/$metainfo" || {
+grep -q "<release version=\"$version\"" "$tmp/assets/usr/share/metainfo/$metainfo" || {
   echo "metainfo has no <release> entry for VERSION $version" >&2
   exit 1
 }
@@ -112,16 +117,14 @@ for destination in \
   "etc/xdg/autostart/$desktop" \
   "usr/share/applications/$desktop"
 do
-  cmp "$assets/$desktop" "$package_root/$destination"
+  cmp "$tmp/assets/$destination" "$package_root/$destination"
 done
 
-cmp "$assets/io.github.devlinger.DevLinger.metainfo.xml" \
-  "$package_root/usr/share/metainfo/io.github.devlinger.DevLinger.metainfo.xml"
+cmp "$tmp/assets/usr/share/metainfo/$metainfo" \
+  "$package_root/usr/share/metainfo/$metainfo"
 
-cmp "$assets/io.github.devlinger.DevLinger.svg" \
-  "$package_root/usr/share/icons/hicolor/scalable/apps/io.github.devlinger.DevLinger.svg"
-
-cmp "$root/scripts/install.sh" "$tmp/repo/install.sh"
+cmp "$tmp/assets/usr/share/icons/hicolor/scalable/apps/$APPID.svg" \
+  "$package_root/usr/share/icons/hicolor/scalable/apps/$APPID.svg"
 
 mkdir "$tmp/mock"
 
@@ -138,7 +141,7 @@ EOF
 
 cat > "$tmp/mock/gpg" <<'EOF'
 #!/bin/sh
-printf 'pub:::::::::\nfpr:::::::::%s:\n' "${TEST_FINGERPRINT:-A17FD32EBCB92EC0C06CBA8E1B2A90F1DB7748F8}"
+printf 'pub:::::::::\nfpr:::::::::%s:\n' "${TEST_FINGERPRINT:-$GPG_FINGERPRINT}"
 EOF
 
 cat > "$tmp/mock/sudo" <<'EOF'
@@ -162,7 +165,7 @@ export TEST_SUDO_LOG="$tmp/sudo.log"
 export TEST_LAUNCH_LOG="$tmp/launch.log"
 
 DISPLAY=:99 WAYLAND_DISPLAY= PATH="$tmp/mock:$PATH" \
-  bash "$root/scripts/install.sh"
+  bash "$tmp/repo/install.sh"
 
 for i in {1..50}; do
   [[ -s "$TEST_LAUNCH_LOG" ]] && break
@@ -175,13 +178,13 @@ grep -q '^apt-get install -y devlinger$' "$TEST_SUDO_LOG"
 rm "$TEST_LAUNCH_LOG"
 
 TEST_RUNNING=0 DISPLAY=:99 PATH="$tmp/mock:$PATH" \
-  bash "$root/scripts/install.sh" |
+  bash "$tmp/repo/install.sh" |
   grep -q 'already running'
 
 [[ ! -e "$TEST_LAUNCH_LOG" ]]
 
 DISPLAY= WAYLAND_DISPLAY= PATH="$tmp/mock:$PATH" \
-  bash "$root/scripts/install.sh" |
+  bash "$tmp/repo/install.sh" |
   grep -q 'No desktop session'
 
 [[ ! -e "$TEST_LAUNCH_LOG" ]]
@@ -189,7 +192,7 @@ DISPLAY= WAYLAND_DISPLAY= PATH="$tmp/mock:$PATH" \
 : > "$TEST_SUDO_LOG"
 
 if TEST_FINGERPRINT=BAD PATH="$tmp/mock:$PATH" \
-  bash "$root/scripts/install.sh" 2>/dev/null; then
+  bash "$tmp/repo/install.sh" 2>/dev/null; then
   echo 'Installer accepted an unexpected signing key' >&2
   exit 1
 fi
