@@ -2,7 +2,7 @@
 
 These are the reference numbers of DevLinger's current performance baseline. Every developer who checks out this repository and repeats the commands below gets the same values — the indicators are hardware-independent by construction. Elapsed time is not a baseline number: it is machine-local and belongs to no contract. See [README.md](README.md).
 
-Measured at revision `refactor/simplify-service-details` (PR #13), Go 1.27.3, fixed workload of `BenchmarkControlledWorkload`.
+Measured for the `v0.4.1` release candidate on 2026-11-18 with Go 1.27.3 and the fixed `BenchmarkControlledWorkload` fixture.
 
 ## Indicators
 
