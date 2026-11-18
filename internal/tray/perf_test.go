@@ -1,42 +1,33 @@
 package tray
 
 import (
-	"context"
-	"os"
 	"testing"
 
 	"github.com/devlinger/devlinger/internal/monitor"
-	"github.com/godbus/dbus/v5"
 )
 
-// Run under dbus-run-session to avoid interfering with the desktop watcher.
-func BenchmarkUpdate(b *testing.B) {
-	if os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" {
-		b.Skip("requires a private session bus")
+// layoutServices mirrors the controlled monitor workload: three local
+// servers, two Compose groups and two standalone containers.
+func layoutServices() []monitor.Service {
+	return []monitor.Service{
+		{Name: "Vite", Project: "/work/alpha", Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}}},
+		{Name: "Django", Project: "/work/beta", Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 8000}}},
+		{Name: "Storybook", Project: "/work/gamma", Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 6006}}},
+		{Name: "compose-alpha", Docker: true, Members: []monitor.Service{{ContainerID: "alpha-1"}, {ContainerID: "alpha-2"}, {ContainerID: "alpha-3"}}},
+		{Name: "compose-beta", Docker: true, Members: []monitor.Service{{ContainerID: "beta-1"}, {ContainerID: "beta-2"}, {ContainerID: "beta-3"}}},
+		{Name: "standalone-a", Docker: true, ContainerID: "standalone-a"},
+		{Name: "standalone-b", Docker: true, ContainerID: "standalone-b"},
 	}
-	conn, err := dbus.ConnectSessionBus()
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer conn.Close()
-	reply, err := conn.RequestName("org.kde.StatusNotifierWatcher", dbus.NameFlagDoNotQueue)
-	if err != nil {
-		b.Fatal(err)
-	}
-	if reply != dbus.RequestNameReplyPrimaryOwner {
-		b.Skip("requires a private session bus without a watcher")
-	}
-	if err := conn.Export(watcher{}, "/StatusNotifierWatcher", "org.kde.StatusNotifierWatcher"); err != nil {
-		b.Fatal(err)
-	}
-	t, err := New(context.Background())
-	if err != nil {
-		b.Fatal(err)
-	}
-	defer t.Close()
-	services := []monitor.Service{{Name: "Vite", Project: "/project"}}
+}
+
+// BenchmarkLayout measures the full menu update: service bookkeeping plus
+// the complete D-BusMenu layout render.
+func BenchmarkLayout(b *testing.B) {
+	services := layoutServices()
+	t := &Tray{}
 	b.ReportAllocs()
 	for b.Loop() {
-		t.Update(services, nil)
+		t.setServices(services)
+		t.root()
 	}
 }

@@ -281,6 +281,14 @@ func TestNewWaitsForWatcher(t *testing.T) {
 		// Expected: New is still waiting.
 	}
 
+	if err := conn.Export(
+		watcher{},
+		"/StatusNotifierWatcher",
+		"org.kde.StatusNotifierWatcher",
+	); err != nil {
+		t.Fatal(err)
+	}
+
 	reply, err := conn.RequestName(
 		"org.kde.StatusNotifierWatcher",
 		dbus.NameFlagDoNotQueue,
@@ -290,14 +298,6 @@ func TestNewWaitsForWatcher(t *testing.T) {
 	}
 	if reply != dbus.RequestNameReplyPrimaryOwner {
 		t.Skip("watcher already running; use isolated D-Bus session")
-	}
-
-	if err := conn.Export(
-		watcher{},
-		"/StatusNotifierWatcher",
-		"org.kde.StatusNotifierWatcher",
-	); err != nil {
-		t.Fatal(err)
 	}
 
 	select {
