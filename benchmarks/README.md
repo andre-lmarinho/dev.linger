@@ -2,11 +2,11 @@
 
 DevLinger's benchmark is a **budget contract**, not a table of timings.
 
-Any person who checks out this repository and runs `go test ./...` enforces the same budgets and gets the same numbers — on a US$ 200 laptop, on a US$ 40,000 workstation, anywhere. The indicators are hardware-independent by construction:
+Any person who checks out this repository and runs `go test ./...` with the baseline's Go toolchain enforces the same budgets and gets the same numbers — on a US$ 200 laptop, on a US$ 40,000 workstation, anywhere. The indicators are hardware-independent by construction:
 
 | Indicator | Reproducibility | Enforced by |
 |---|---|---|
-| `allocs/op` | Exact | `TestDiscoveryBudget`, `TestLayoutBudget` |
+| `allocs/op` | Exact for the same Go toolchain | `TestDiscoveryBudget`, `TestLayoutBudget` |
 | `B/op` | Reproducible within a few % with GC state; the ceiling is the contract | `TestDiscoveryBudget`, `TestLayoutBudget` |
 | Release binary bytes | Exact for the same Go toolchain | `benchmarks/compare.py` |
 | Fixture outputs (services discovered) | Exact | `TestControlledWorkload` |

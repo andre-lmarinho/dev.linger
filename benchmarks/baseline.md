@@ -8,15 +8,15 @@ Measured at revision `refactor/simplify-service-details` (PR #13), Go 1.27.3, fi
 
 | Indicator | Observed | Budget (enforced by `go test ./...`) | Reproducibility |
 |---|---:|---:|---|
-| Discovery `allocs/op` | 14,881 | ≤ 15,200 | Exact on any machine |
+| Discovery `allocs/op` | 14,881 | ≤ 15,200 | Exact on any machine with Go 1.27.3 |
 | Discovery `B/op` | ~1,23–1,31 MB | ≤ 1,400,000 | Varies a few % with GC state; ceiling is the contract |
-| Layout `allocs/op` | 235 | ≤ 245 | Exact on any machine |
-| Layout `B/op` | 14,761 | ≤ 15,500 | Exact on any machine |
+| Layout `allocs/op` | 235 | ≤ 245 | Exact on any machine with Go 1.27.3 |
+| Layout `B/op` | 14,681 | ≤ 15,500 | Exact on any machine with Go 1.27.3 |
 | Release binary | 8,495,367 bytes | comparator verdict | Exact for the same Go toolchain |
 
 ## How to verify
 
-Any machine, no fixtures or worktrees needed:
+Any machine using Go 1.27.3, no fixtures or worktrees needed:
 
 ```sh
 go test ./...
