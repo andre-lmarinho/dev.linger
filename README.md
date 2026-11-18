@@ -2,13 +2,13 @@
 
 **What's still running?**
 
-DevLinger is a read-only Linux tray app for finding your development servers and running Docker containers, even after you close your editor.
+DevLinger is a Linux tray app for finding and stopping your development servers and running Docker containers, even after you close your editor.
 
 ## What it shows
 
 - Recognized local development servers, with their project, ports, Git branch, uptime, CPU and memory when available.
 - Running Docker containers, grouped by Compose project when applicable.
-- A single tray menu that refreshes every 10 seconds. DevLinger does not stop or modify services.
+- A single tray menu that refreshes every 10 seconds and can request a graceful stop.
 
 Unknown listeners are omitted. Docker resource usage and uptime are not collected.
 
@@ -41,7 +41,7 @@ go build -o devlinger .
 ./devlinger
 ```
 
-Open the tray icon to see services. The tray menu is read-only.
+Open the tray icon to see or stop services.
 
 ## Detection
 

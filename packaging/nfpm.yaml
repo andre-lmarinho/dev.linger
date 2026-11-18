@@ -5,7 +5,7 @@ version: ${VERSION}
 version_schema: semver
 
 maintainer: DevLinger contributors
-description: Linux system tray monitor for local development services
+description: Monitor and stop local development services from the Linux system tray
 homepage: https://github.com/andre-lmarinho/dev.linger
 license: MIT
 

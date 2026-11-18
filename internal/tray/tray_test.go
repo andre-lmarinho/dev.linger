@@ -43,31 +43,37 @@ func TestFormatAvailableMetrics(t *testing.T) {
 	}
 }
 
-func TestServiceSubmenu(t *testing.T) {
-	tray := &Tray{services: []monitor.Service{{Name: "Vite", CPU: 1, MemoryMB: 2, CPUValid: true, MemoryValid: true, Members: []monitor.Service{{Name: "HMR", CPU: 1, MemoryMB: 2}}}}}
+func TestStandaloneStopActionIsTopLevel(t *testing.T) {
+	tray := &Tray{}
+	tray.setServices([]monitor.Service{{Name: "Vite", PID: 42}})
 	items := tray.items()
-	if items[1].Properties["label"].Value() != "Vite\nCPU 1.0% · Memory 2 MB\n1 sub-service" || items[1].Properties["enabled"].Value() != true || len(items[1].Children) != 1 {
-		t.Fatalf("unexpected service submenu: %#v", items[1])
+	if len(items) != 2 || len(items[1].Children) != 0 {
+		t.Fatalf("unexpected standalone menu: %#v", items)
 	}
-	child := items[1].Children[0].Value().(layout)
-	if child.Properties["label"].Value() != "↳ HMR" {
-		t.Fatal(child.Properties["label"].Value())
+	if items[1].ID != tray.actionIDs[0] || items[1].Properties["label"].Value() != "Vite" || items[1].Properties["icon-name"].Value() != "process-stop" {
+		t.Fatalf("service row is not the stop action: %#v", items[1])
+	}
+}
+
+func TestSubServicesAreNotShown(t *testing.T) {
+	tray := &Tray{}
+	tray.setServices([]monitor.Service{{Name: "Vite", CPU: 1, MemoryMB: 2, CPUValid: true, MemoryValid: true, Members: []monitor.Service{{Name: "HMR", CPU: 1, MemoryMB: 2}}}})
+	items := tray.items()
+	if items[1].Properties["label"].Value() != "Vite\nCPU 1.0% · Memory 2 MB" || len(items[1].Children) != 0 {
+		t.Fatalf("unexpected service row: %#v", items[1])
 	}
 }
 
 func TestComposeMenu(t *testing.T) {
-	tray := &Tray{services: []monitor.Service{{Name: "demo", Docker: true, Members: []monitor.Service{{Name: "web", Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}}}, {Name: "db"}}}}}
+	tray := &Tray{}
+	tray.setServices([]monitor.Service{{Name: "demo", Docker: true, Members: []monitor.Service{{Name: "web", Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}}}, {Name: "db"}}}})
 	_, root, err := tray.GetLayout(0, -1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	project := root.Children[1].Value().(layout)
-	if project.Properties["label"].Value() != "demo · Docker\n2 containers" || project.Properties["enabled"].Value() != true || project.Properties["toggle-type"].Value() != "radio" || len(project.Children) != 2 {
+	if project.Properties["label"].Value() != "demo · Docker" || project.Properties["enabled"].Value() != true || len(project.Children) != 0 {
 		t.Fatalf("unexpected project: %#v", project)
-	}
-	web := project.Children[0].Value().(layout)
-	if web.Properties["label"].Value() != "↳ web · :3000" {
-		t.Fatal(web)
 	}
 	_, shallow, err := tray.GetLayout(0, 1, nil)
 	if err != nil {
@@ -77,12 +83,8 @@ func TestComposeMenu(t *testing.T) {
 		t.Fatal("depth ignored")
 	}
 	_, children, err := tray.GetLayout(project.ID, 1, nil)
-	if err != nil || len(children.Children) != 2 {
+	if err != nil || len(children.Children) != 0 {
 		t.Fatalf("submenu: %#v %v", children, err)
-	}
-	value, err := tray.GetProperty(web.ID, "label")
-	if err != nil || value.Value() != "↳ web · :3000" {
-		t.Fatalf("property: %v %v", value, err)
 	}
 }
 
@@ -135,12 +137,12 @@ func TestMenuOverDBus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if revision != 1 || len(menu.Children) != 3 {
+	if revision != 1 || len(menu.Children) != 4 {
 		t.Fatalf("unexpected menu: %#v revision %d", menu, revision)
 	}
-	err = conn.Object(tray.conn.Names()[0], menuPath).Call("com.canonical.dbusmenu.GetLayout", 0, int32(11), int32(1), []string{}).Store(&revision, &menu)
-	if err != nil || len(menu.Children) != 1 {
-		t.Fatalf("submenu: %#v %v", menu, err)
+	err = conn.Object(tray.conn.Names()[0], menuPath).Call("com.canonical.dbusmenu.GetLayout", 0, tray.actionIDs[1], int32(1), []string{}).Store(&revision, &menu)
+	if err != nil || len(menu.Children) != 0 {
+		t.Fatalf("service row: %#v %v", menu, err)
 	}
 	tray.Update(nil, nil)
 	if got := icon()[0].Data; got[(7*16+7)*4] != 160 {
@@ -159,7 +161,8 @@ func TestMenuHasNoQuitNoAutostart(t *testing.T) {
 		},
 	}
 	for name, services := range cases {
-		tray := &Tray{services: services}
+		tray := &Tray{}
+		tray.setServices(services)
 		var walk func(children []dbus.Variant)
 		walk = func(children []dbus.Variant) {
 			for _, v := range children {
@@ -172,6 +175,51 @@ func TestMenuHasNoQuitNoAutostart(t *testing.T) {
 			}
 		}
 		walk(tray.root().Children)
+	}
+}
+
+func TestClickStopsMappedService(t *testing.T) {
+	called := make(chan monitor.Service, 1)
+	tray := &Tray{
+		ctx: context.Background(),
+		stop: func(_ context.Context, service monitor.Service) error {
+			called <- service
+			return nil
+		},
+	}
+	tray.setServices([]monitor.Service{{Name: "Vite", PID: 42}})
+	actionID := tray.actionIDs[0]
+
+	if err := tray.Event(actionID, "clicked", dbus.Variant{}, 0); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case service := <-called:
+		if service.PID != 42 {
+			t.Fatalf("stopped wrong service: %#v", service)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("stop action was not called")
+	}
+}
+
+func TestStaleActionDoesNotStopAnotherService(t *testing.T) {
+	called := make(chan monitor.Service, 1)
+	tray := &Tray{
+		stop: func(_ context.Context, service monitor.Service) error {
+			called <- service
+			return nil
+		},
+	}
+	tray.setServices([]monitor.Service{{Name: "old", PID: 1}})
+	staleID := tray.actionIDs[0]
+	tray.setServices([]monitor.Service{{Name: "new", PID: 2}})
+
+	tray.Event(staleID, "clicked", dbus.Variant{}, 0)
+	select {
+	case service := <-called:
+		t.Fatalf("stale action stopped %#v", service)
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 

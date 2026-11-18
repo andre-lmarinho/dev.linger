@@ -22,11 +22,16 @@ const itemPath = dbus.ObjectPath("/StatusNotifierItem")
 const menuPath = dbus.ObjectPath("/MenuBar")
 
 type Tray struct {
-	conn     *dbus.Conn
-	props    *prop.Properties
-	mu       sync.RWMutex
-	services []monitor.Service
-	revision uint32
+	conn      *dbus.Conn
+	props     *prop.Properties
+	mu        sync.RWMutex
+	services  []monitor.Service
+	actionIDs []int32
+	actions   map[int32]monitor.Service
+	nextID    int32
+	revision  uint32
+	ctx       context.Context
+	stop      func(context.Context, monitor.Service) error
 
 	// Lifecycle of the D-Bus watcher observer.
 	cancel    context.CancelFunc
@@ -183,7 +188,7 @@ func New(ctx context.Context) (*Tray, error) {
 	if err != nil {
 		return nil, err
 	}
-	t := &Tray{conn: conn}
+	t := &Tray{conn: conn, ctx: ctx, stop: monitor.Stop}
 	fail := func(err error) (*Tray, error) { conn.Close(); return nil, err }
 	name := fmt.Sprintf("org.kde.StatusNotifierItem-%d-1", os.Getpid())
 	reply, err := conn.RequestName(name, dbus.NameFlagDoNotQueue)
@@ -278,9 +283,11 @@ func trayIcon(active bool) []pixmap {
 
 func (t *Tray) Update(services []monitor.Service, scanErr error) {
 	t.mu.Lock()
-	t.services = append([]monitor.Service(nil), services...)
+	t.setServices(services)
 	if scanErr != nil {
 		t.services = []monitor.Service{{Name: "Unable to read listeners"}}
+		t.actionIDs = nil
+		t.actions = nil
 	}
 	t.revision++
 	rev := t.revision
@@ -290,6 +297,20 @@ func (t *Tray) Update(services []monitor.Service, scanErr error) {
 	t.conn.Emit(itemPath, "org.kde.StatusNotifierItem.NewIcon")
 	t.conn.Emit(itemPath, "org.kde.StatusNotifierItem.NewTitle")
 	t.conn.Emit(menuPath, "com.canonical.dbusmenu.LayoutUpdated", rev, int32(0))
+}
+
+func (t *Tray) setServices(services []monitor.Service) {
+	if t.nextID == 0 {
+		t.nextID = 1_000_000
+	}
+	t.services = append([]monitor.Service(nil), services...)
+	t.actionIDs = make([]int32, len(services))
+	t.actions = make(map[int32]monitor.Service, len(services))
+	for i, service := range services {
+		t.nextID += 2
+		t.actionIDs[i] = t.nextID
+		t.actions[t.nextID] = service
+	}
 }
 
 func (t *Tray) Close() {
@@ -314,26 +335,16 @@ func (t *Tray) items() []layout {
 	if len(t.services) == 0 {
 		items = append(items, layout{ID: 2, Properties: map[string]dbus.Variant{"label": dbus.MakeVariant("No recognized services found"), "enabled": dbus.MakeVariant(false)}})
 	}
-	childID := int32(len(t.services) + 10)
 	for i, s := range t.services {
-		item := layout{ID: int32(i + 10), Properties: serviceProperties(formatService(s)), Children: []dbus.Variant{}}
-		if len(s.Members) > 0 {
-			label := "sub-services"
-			if s.Docker {
-				label = "containers"
-			}
-			if len(s.Members) == 1 {
-				label = strings.TrimSuffix(label, "s")
-			}
-			item.Properties = serviceProperties(fmt.Sprintf("%s\n%d %s", formatService(s), len(s.Members), label))
-			item.Properties["children-display"] = dbus.MakeVariant("submenu")
-			for _, member := range s.Members {
-				child := layout{ID: childID, Properties: childProperties(formatServiceName(member)), Children: []dbus.Variant{}}
-				item.Children = append(item.Children, dbus.MakeVariant(child))
-				childID++
+		if i < len(t.actionIDs) {
+			properties := serviceProperties(formatService(s))
+			properties["icon-name"] = dbus.MakeVariant("process-stop")
+			properties["accessible-desc"] = dbus.MakeVariant("Stop " + formatServiceName(s))
+			items = append(items, layout{ID: t.actionIDs[i], Properties: properties, Children: []dbus.Variant{}})
+			if i < len(t.services)-1 {
+				items = append(items, layout{ID: t.actionIDs[i] - 1, Properties: map[string]dbus.Variant{"type": dbus.MakeVariant("separator")}, Children: []dbus.Variant{}})
 			}
 		}
-		items = append(items, item)
 	}
 	for i := range items {
 		if items[i].Children == nil {
@@ -345,15 +356,9 @@ func (t *Tray) items() []layout {
 
 func serviceProperties(label string) map[string]dbus.Variant {
 	return map[string]dbus.Variant{
-		"label":        dbus.MakeVariant(label),
-		"enabled":      dbus.MakeVariant(true),
-		"toggle-type":  dbus.MakeVariant("radio"),
-		"toggle-state": dbus.MakeVariant(int32(1)),
+		"label":   dbus.MakeVariant(label),
+		"enabled": dbus.MakeVariant(true),
 	}
-}
-
-func childProperties(label string) map[string]dbus.Variant {
-	return map[string]dbus.Variant{"label": dbus.MakeVariant("↳ " + label), "enabled": dbus.MakeVariant(true)}
 }
 
 func formatService(s monitor.Service) string {
@@ -487,8 +492,31 @@ func (t *Tray) GetProperty(id int32, name string) (dbus.Variant, *dbus.Error) {
 	return dbus.Variant{}, dbus.MakeFailedError(fmt.Errorf("unknown property"))
 }
 
-// This build exposes no Quit or autostart items; click events are ignored.
-func (t *Tray) Event(int32, string, dbus.Variant, uint32) *dbus.Error { return nil }
+func (t *Tray) Event(id int32, eventID string, _ dbus.Variant, _ uint32) *dbus.Error {
+	if eventID != "clicked" {
+		return nil
+	}
+	t.mu.RLock()
+	service, ok := t.actions[id]
+	stop := t.stop
+	ctx := t.ctx
+	t.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+	if stop == nil {
+		stop = monitor.Stop
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	go func() {
+		if err := stop(ctx, service); err != nil {
+			log.Printf("stop %s: %v", formatServiceName(service), err)
+		}
+	}()
+	return nil
+}
 func (t *Tray) EventGroup(events []event) ([]int32, *dbus.Error) {
 	for _, e := range events {
 		t.Event(e.ID, e.EventID, e.Data, e.Timestamp)

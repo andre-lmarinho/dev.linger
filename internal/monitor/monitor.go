@@ -409,19 +409,27 @@ type container struct {
 }
 
 func docker(ctx context.Context) []container {
+	socket, ok := dockerSocket()
+	if !ok {
+		return nil
+	}
+	return dockerAt(ctx, socket)
+}
+
+func dockerSocket() (string, bool) {
 	if host := os.Getenv("DOCKER_HOST"); host != "" {
 		if !strings.HasPrefix(host, "unix:///") {
-			return nil
+			return "", false
 		}
-		return dockerAt(ctx, strings.TrimPrefix(host, "unix://"))
+		return strings.TrimPrefix(host, "unix://"), true
 	}
 	if runtime := os.Getenv("XDG_RUNTIME_DIR"); runtime != "" {
 		path := filepath.Join(runtime, "docker.sock")
 		if info, err := os.Stat(path); err == nil && info.Mode()&os.ModeSocket != 0 {
-			return dockerAt(ctx, path)
+			return path, true
 		}
 	}
-	return dockerAt(ctx, "/var/run/docker.sock")
+	return "/var/run/docker.sock", true
 }
 
 func dockerAt(ctx context.Context, socket string) []container {

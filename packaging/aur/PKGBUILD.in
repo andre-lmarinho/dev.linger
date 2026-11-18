@@ -2,7 +2,7 @@
 pkgname=devlinger
 pkgver=@VERSION@
 pkgrel=1
-pkgdesc='Linux system tray monitor for local development services'
+pkgdesc='Monitor and stop local development services from the Linux system tray'
 arch=('x86_64')
 url='https://github.com/andre-lmarinho/dev.linger'
 license=('MIT')

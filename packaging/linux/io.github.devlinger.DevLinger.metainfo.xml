@@ -5,12 +5,12 @@
   <project_license>MIT</project_license>
 
   <name>DevLinger</name>
-  <summary>Monitor local development services from your Linux system tray</summary>
+  <summary>Monitor and stop local development services from your Linux system tray</summary>
 
   <description>
     <p>
-      DevLinger is a read-only Linux system tray application that
-      monitors local development servers and running Docker containers.
+      DevLinger is a Linux system tray application that monitors and
+      gracefully stops local development servers and Docker containers.
     </p>
     <p>
       View project names, ports, Git branches, uptime and available
@@ -27,6 +27,7 @@
   <url type="bugtracker">https://github.com/andre-lmarinho/dev.linger/issues</url>
 
   <releases>
+    <release version="0.4.0" date="2026-11-17" />
     <release version="0.3.2" date="2026-11-08" />
   </releases>
 
