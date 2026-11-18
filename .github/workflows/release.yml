@@ -45,27 +45,9 @@ jobs:
           scripts/release-guard.sh \
             "$(cat VERSION)" "$GITHUB_SHA" "$tags" >> "$GITHUB_OUTPUT"
 
-      - name: Setup Go
+      - name: Verify
         if: steps.version.outputs.should_release == 'true'
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Test
-        if: steps.version.outputs.should_release == 'true'
-        run: |
-          dbus-run-session -- go test -race ./...
-          go vet ./...
-
-      - name: Install APT tooling
-        if: steps.version.outputs.should_release == 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y apt-utils appstream desktop-file-utils
-
-      - name: Test packaging
-        if: steps.version.outputs.should_release == 'true'
-        run: scripts/test-release.sh
+        uses: ./.github/actions/verify
 
       - name: Publish signed APT repository and tag
         if: steps.version.outputs.should_release == 'true'
