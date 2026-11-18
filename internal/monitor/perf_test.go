@@ -1,52 +1,10 @@
 package monitor
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
 )
-
-// These benchmarks read the current host's /proc and optional Docker socket.
-func BenchmarkLive(b *testing.B) {
-	ctx := context.Background()
-	services, err := Scan(ctx)
-	if err != nil {
-		b.Fatal(err)
-	}
-	processes := readProcesses("/proc", os.Getuid())
-	listeners, err := readListeners("/proc")
-	if err != nil {
-		b.Fatal(err)
-	}
-	b.Logf("fixture: %d user processes, %d listeners, %d services", len(processes), len(listeners), len(services))
-	benchmarks := []struct {
-		name string
-		run  func()
-	}{
-		{"Scan", func() {
-			if _, err := Scan(ctx); err != nil {
-				b.Fatal(err)
-			}
-		}},
-		{"Listeners", func() {
-			if _, err := readListeners("/proc"); err != nil {
-				b.Fatal(err)
-			}
-		}},
-		{"Processes", func() { readProcesses("/proc", os.Getuid()) }},
-		{"AssociateSockets", func() { associateSockets("/proc", processes, listeners) }},
-		{"Docker", func() { docker(ctx) }},
-	}
-	for _, benchmark := range benchmarks {
-		b.Run(benchmark.name, func(b *testing.B) {
-			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
-				benchmark.run()
-			}
-		})
-	}
-}
 
 func BenchmarkCatalog(b *testing.B) {
 	dir := b.TempDir()
