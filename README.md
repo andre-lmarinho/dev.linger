@@ -66,6 +66,10 @@ To disable autostart for your user, copy the system-wide Desktop Entry to `~/.co
 ```sh
 dbus-run-session -- go test -race ./...
 go vet ./...
+
+# After installing nFPM v2.43.0, exercise and compare the DEB, RPM/nFPM,
+# AUR and AppImage install layouts without publishing anything.
+scripts/test-package-layouts.sh
 ```
 
 Performance benchmarks and baseline: [`benchmarks/README.md`](benchmarks/README.md).

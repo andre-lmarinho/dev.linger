@@ -22,11 +22,5 @@ build() {
 package() {
   cd "${srcdir}/dev.linger-${pkgver}"
 
-  ./scripts/expand-assets.sh --autostart "${pkgdir}"
-
-  install -Dm755 devlinger \
-    "${pkgdir}/usr/bin/devlinger"
-
-  install -Dm644 LICENSE \
-    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  ./scripts/stage-install.sh system "${pkgdir}" ./devlinger
 }

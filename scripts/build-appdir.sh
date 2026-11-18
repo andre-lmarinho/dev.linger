@@ -10,25 +10,6 @@ if [[ ! -f "$binary" ]]; then
 fi
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-source "$root/metadata.sh"
-
-rm -rf "$appdir"
-mkdir -p "$appdir/usr/bin"
-
-install -m 755 "$binary" "$appdir/usr/bin/devlinger"
-
-"$root/scripts/expand-assets.sh" "$appdir"
-
-# AppImage must not depend on an absolute /usr/bin path.
-sed -i 's|^Exec=/usr/bin/devlinger$|Exec=devlinger|' \
-  "$appdir/usr/share/applications/$APPID.desktop"
-
-ln -s "usr/bin/devlinger" "$appdir/AppRun"
-
-ln -s "usr/share/applications/$APPID.desktop" \
-  "$appdir/$APPID.desktop"
-
-ln -s "usr/share/icons/hicolor/scalable/apps/$APPID.svg" \
-  "$appdir/$APPID.svg"
+"$root/scripts/stage-install.sh" appdir "$appdir" "$binary"
 
 echo "AppDir created: $appdir"

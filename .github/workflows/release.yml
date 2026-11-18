@@ -135,6 +135,9 @@ jobs:
         run: |
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.0
 
+      - name: Test all package layouts
+        run: scripts/test-package-layouts.sh
+
       - name: Download appimagetool
         run: |
           curl --fail --location --retry 3 \
@@ -153,11 +156,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          set -a
-          . metadata.sh
-          set +a
-
-          scripts/expand-assets.sh dist/assets
+          scripts/stage-install.sh system dist/package-root dist/devlinger
 
           "$(go env GOPATH)/bin/nfpm" package \
             --config packaging/nfpm.yaml \

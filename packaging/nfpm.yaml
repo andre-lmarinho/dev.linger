@@ -10,23 +10,6 @@ homepage: ${REPO_URL}
 license: MIT
 
 contents:
-  - src: dist/devlinger
-    dst: /usr/bin/devlinger
-    file_info:
-      mode: 0755
-
-  - src: dist/assets/usr/share/applications/${APPID}.desktop
-    dst: /usr/share/applications/${APPID}.desktop
-    expand: true
-
-  - src: dist/assets/usr/share/applications/${APPID}.desktop
-    dst: /etc/xdg/autostart/${APPID}.desktop
-    expand: true
-
-  - src: dist/assets/usr/share/metainfo/${APPID}.metainfo.xml
-    dst: /usr/share/metainfo/${APPID}.metainfo.xml
-    expand: true
-
-  - src: dist/assets/usr/share/icons/hicolor/scalable/apps/${APPID}.svg
-    dst: /usr/share/icons/hicolor/scalable/apps/${APPID}.svg
-    expand: true
+  - src: dist/package-root/
+    dst: /
+    type: tree

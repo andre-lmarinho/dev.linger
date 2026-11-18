@@ -13,23 +13,14 @@ source "$root/metadata.sh"
 mkdir -p "$repo/pool" "$repo/dists/stable/main/binary-amd64"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/package/DEBIAN" "$tmp/package/usr/bin"
 
 cd "$root"
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
   go build -trimpath -ldflags='-s -w' \
-  -o "$tmp/package/usr/bin/devlinger" .
+  -o "$tmp/devlinger" .
 
-"$root/scripts/expand-assets.sh" --autostart "$tmp/package"
-
-cat > "$tmp/package/DEBIAN/control" <<EOF
-Package: devlinger
-Version: $version
-Architecture: amd64
-Maintainer: DevLinger contributors
-Description: Linux system tray monitor for local development services
-EOF
-dpkg-deb --build --root-owner-group "$tmp/package" "$repo/pool/devlinger_${version}_amd64.deb"
+"$root/scripts/build-deb.sh" \
+  "$version" "$repo/pool/devlinger_${version}_amd64.deb" "$tmp/devlinger"
 sed -e "s|@PAGES_URL@|$PAGES_URL|g" -e "s|@GPG_FINGERPRINT@|$GPG_FINGERPRINT|g" \
   "$root/scripts/install.sh.in" > "$repo/install.sh"
 (
