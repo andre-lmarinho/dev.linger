@@ -50,7 +50,6 @@ func matchCatalog(args []string, cwd string, entries []signature) string {
 	if len(args) == 0 || cwd == "" {
 		return ""
 	}
-	// Each signature considers either the executable or its first argument.
 	var paths [2]string
 	var resolvedPaths [2]bool
 	for _, entry := range entries {

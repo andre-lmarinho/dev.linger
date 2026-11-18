@@ -12,6 +12,10 @@ import (
 	"github.com/devlinger/devlinger/internal/tray"
 )
 
+// scanInterval is how often the tray refreshes its service list; the README
+// documents the same number to users.
+const scanInterval = 10 * time.Second
+
 func main() {
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
@@ -34,7 +38,7 @@ func main() {
 	}
 	defer t.Close()
 	go func() {
-		ticker := time.NewTicker(10 * time.Second)
+		ticker := time.NewTicker(scanInterval)
 		defer ticker.Stop()
 		for {
 			services, err := monitor.Scan(ctx)
