@@ -4,7 +4,7 @@ Run from the repository root on Linux. Go 1.24+ is required, as is `dbus-run-ses
 
 ```sh
 go test ./...
-go test ./internal/monitor -run '^$' -bench 'Benchmark(Live|Catalog)' -benchmem -benchtime=500ms -count=3 -v
+go test ./internal/monitor -run '^$' -bench 'Benchmark(Live|Catalog|SyntheticProc)' -benchmem -benchtime=500ms -count=3 -v
 dbus-run-session -- go test ./internal/tray -run '^$' -bench '^BenchmarkUpdate$' -benchmem -benchtime=500ms -count=3
 ```
 
