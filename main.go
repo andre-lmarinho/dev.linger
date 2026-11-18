@@ -36,7 +36,6 @@ func main() {
 	go func() {
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
-		var metrics monitor.Metrics
 		for {
 			services, err := monitor.Scan(ctx)
 			if ctx.Err() != nil {
@@ -45,7 +44,6 @@ func main() {
 			if err != nil {
 				log.Print(err)
 			}
-			metrics.Update(services)
 			t.Update(services, err)
 			select {
 			case <-ctx.Done():

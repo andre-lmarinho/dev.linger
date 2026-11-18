@@ -6,11 +6,11 @@ DevLinger is a Linux tray app for finding and stopping your development servers 
 
 ## What it shows
 
-- Recognized local development servers, with their project, ports, Git branch, uptime, CPU and memory when available.
+- Recognized local development servers, with their project and ports.
 - Running Docker containers, grouped by Compose project when applicable.
 - A single tray menu that refreshes every 10 seconds and can request a graceful stop.
 
-Unknown listeners are omitted. Docker resource usage and uptime are not collected.
+Unknown listeners are omitted.
 
 ## Get started
 
@@ -47,7 +47,7 @@ Open the tray icon to see or stop services.
 
 DevLinger recognizes explicit commands for Next.js, Astro, Vite, Nuxt, Angular, NestJS, Remix, Storybook, Expo, Python HTTP Server, Django, Flask, Uvicorn and PHP's built-in server. See [`internal/monitor/catalog.go`](internal/monitor/catalog.go) for the supported entrypoints and argument order.
 
-Detection requires an active TCP listener and can miss services with unsupported command layouts or shared sockets. For example, Gunicorn's usual master/worker socket is currently omitted. CPU usage is calculated between scans; 100% means one fully used core.
+Detection requires an active TCP listener and can miss services with unsupported command layouts or shared sockets. For example, Gunicorn's usual master/worker socket is currently omitted.
 
 Docker discovery supports local Unix sockets only. See the [Docker socket selection](#docker-socket) note below if containers are missing.
 

@@ -38,26 +38,6 @@ func BenchmarkLive(b *testing.B) {
 		{"AssociateSockets", func() { associateSockets("/proc", processes, listeners) }},
 		{"Docker", func() { docker(ctx) }},
 	}
-	var metrics Metrics
-	metrics.Update(services)
-	benchmarks = append(benchmarks, struct {
-		name string
-		run  func()
-	}{"Metrics", func() { metrics.Update(services) }})
-	self, ok := processes[os.Getpid()]
-	if !ok {
-		b.Fatal("benchmark process missing from /proc")
-	}
-	selfService := []Service{{PID: self.pid, start: self.start}}
-	var selfMetrics Metrics
-	selfMetrics.Update(selfService)
-	if !selfService[0].MemoryValid {
-		b.Fatal("benchmark process metrics unavailable")
-	}
-	benchmarks = append(benchmarks, struct {
-		name string
-		run  func()
-	}{"MetricsSelf", func() { selfMetrics.Update(selfService) }})
 	for _, benchmark := range benchmarks {
 		b.Run(benchmark.name, func(b *testing.B) {
 			b.ReportAllocs()
