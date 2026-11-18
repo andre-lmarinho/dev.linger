@@ -37,15 +37,28 @@ func processStart(pid int) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
+	_, start, err := parseStat(data)
+	return start, err
+}
+
+// parseStat reads a /proc/<pid>/stat body: the parent process ID and the
+// process start time in clock ticks, the fields after the comm name.
+func parseStat(data []byte) (parent int, start uint64, err error) {
 	end := strings.LastIndexByte(string(data), ')')
 	if end < 0 {
-		return 0, errors.New("invalid process stat")
+		return 0, 0, errors.New("invalid process stat")
 	}
 	fields := strings.Fields(string(data[end+1:]))
 	if len(fields) < 20 {
-		return 0, errors.New("invalid process stat")
+		return 0, 0, errors.New("invalid process stat")
 	}
-	return strconv.ParseUint(fields[19], 10, 64)
+	if parent, err = strconv.Atoi(fields[1]); err != nil {
+		return 0, 0, err
+	}
+	if start, err = strconv.ParseUint(fields[19], 10, 64); err != nil {
+		return 0, 0, err
+	}
+	return parent, start, nil
 }
 
 func stopContainers(ctx context.Context, service Service) error {

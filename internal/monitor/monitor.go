@@ -15,6 +15,10 @@ import (
 	"time"
 )
 
+// dockerShortIDLen is Docker's short image ID convention: the first 12 hex
+// characters, used as a display name when a container has no readable name.
+const dockerShortIDLen = 12
+
 type Service struct {
 	Name, Project string
 	ContainerID   string
@@ -76,8 +80,8 @@ func collect(listeners []listener, owners map[string]Service, containers []conta
 		}
 		if name == "" {
 			name = c.ID
-			if len(name) > 12 {
-				name = name[:12]
+			if len(name) > dockerShortIDLen {
+				name = name[:dockerShortIDLen]
 			}
 		}
 		project := c.Labels["com.docker.compose.project"]
@@ -225,19 +229,7 @@ func readProcesses(proc string, uid int) map[int]process {
 		if err != nil {
 			continue
 		}
-		end := strings.LastIndexByte(string(data), ')')
-		if end < 0 {
-			continue
-		}
-		fields := strings.Fields(string(data[end+1:]))
-		if len(fields) < 20 {
-			continue
-		}
-		parent, err := strconv.Atoi(fields[1])
-		if err != nil {
-			continue
-		}
-		start, err := strconv.ParseUint(fields[19], 10, 64)
+		parent, start, err := parseStat(data)
 		if err != nil {
 			continue
 		}
