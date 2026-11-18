@@ -26,19 +26,8 @@ func (w watcher) RegisterStatusNotifierItem(name string) *dbus.Error {
 }
 
 func TestFormatServiceCompact(t *testing.T) {
-	s := monitor.Service{Name: "Vite", Project: "/home/user/shop", PID: 42, Branch: "main", Uptime: 20 * time.Minute, Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}, {Address: "::1", Port: 3000}}}
-	if got := formatService(s); got != "shop · Vite · :3000 · main · 20m" {
-		t.Fatal(got)
-	}
-}
-
-func TestFormatAvailableMetrics(t *testing.T) {
-	s := monitor.Service{Name: "Vite", CPUValid: true, MemoryValid: true}
-	if got := formatService(s); got != "Vite\nCPU 0.0% · Memory 0 MB" {
-		t.Fatal(got)
-	}
-	s.CPUValid = false
-	if got := formatService(s); got != "Vite\nMemory 0 MB" {
+	s := monitor.Service{Name: "Vite", Project: "/home/user/shop", PID: 42, Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}, {Address: "::1", Port: 3000}}}
+	if got := formatServiceName(s); got != "shop · :3000" {
 		t.Fatal(got)
 	}
 }
@@ -57,9 +46,9 @@ func TestStandaloneStopActionIsTopLevel(t *testing.T) {
 
 func TestSubServicesAreNotShown(t *testing.T) {
 	tray := &Tray{}
-	tray.setServices([]monitor.Service{{Name: "Vite", CPU: 1, MemoryMB: 2, CPUValid: true, MemoryValid: true, Members: []monitor.Service{{Name: "HMR", CPU: 1, MemoryMB: 2}}}})
+	tray.setServices([]monitor.Service{{Name: "Vite", Members: []monitor.Service{{Name: "HMR"}}}})
 	items := tray.items()
-	if items[1].Properties["label"].Value() != "Vite\nCPU 1.0% · Memory 2 MB" || len(items[1].Children) != 0 {
+	if items[1].Properties["label"].Value() != "Vite" || len(items[1].Children) != 0 {
 		t.Fatalf("unexpected service row: %#v", items[1])
 	}
 }
@@ -156,7 +145,7 @@ func TestMenuHasNoQuitNoAutostart(t *testing.T) {
 	cases := map[string][]monitor.Service{
 		"empty": nil,
 		"services": {
-			{Name: "Vite", CPUValid: true},
+			{Name: "Vite"},
 			{Name: "demo", Docker: true, Members: []monitor.Service{{Name: "web"}}},
 		},
 	}

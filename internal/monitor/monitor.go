@@ -17,16 +17,11 @@ import (
 
 type Service struct {
 	Name, Project string
-	Branch        string
 	ContainerID   string
 	Docker        bool
 	PID           int
 	Endpoints     []Endpoint
 	Members       []Service
-	CPU, MemoryMB float64
-	CPUValid      bool
-	MemoryValid   bool
-	Uptime        time.Duration
 	start         uint64
 }
 
@@ -69,7 +64,6 @@ func collect(listeners []listener, owners map[string]Service, containers []conta
 		if !ok {
 			i = len(services)
 			processes[owner.PID] = i
-			owner.Branch = gitBranch(owner.Project)
 			services = append(services, owner)
 		}
 		services[i].Endpoints = addEndpoint(services[i].Endpoints, Endpoint{l.address, l.port})
@@ -311,43 +305,6 @@ func associateSockets(proc string, processes map[int]process, listeners []listen
 		}
 	}
 	return owners
-}
-
-func gitBranch(project string) string {
-	if project == "" {
-		return ""
-	}
-	project = filepath.Clean(project)
-	git := filepath.Join(project, ".git")
-	for {
-		if _, err := os.Stat(git); err == nil {
-			break
-		}
-		parent := filepath.Dir(project)
-		if parent == project {
-			return ""
-		}
-		project = parent
-		git = filepath.Join(project, ".git")
-	}
-	if data, err := os.ReadFile(git); err == nil {
-		line := strings.TrimSpace(string(data))
-		if strings.HasPrefix(line, "gitdir: ") {
-			git = strings.TrimPrefix(line, "gitdir: ")
-			if !filepath.IsAbs(git) {
-				git = filepath.Join(project, git)
-			}
-		}
-	}
-	head, err := os.ReadFile(filepath.Join(git, "HEAD"))
-	if err != nil {
-		return ""
-	}
-	value := strings.TrimSpace(string(head))
-	if branch, ok := strings.CutPrefix(value, "ref: refs/heads/"); ok {
-		return branch
-	}
-	return ""
 }
 
 func dockerCgroupID(cgroup string) string {

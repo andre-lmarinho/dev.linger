@@ -337,7 +337,7 @@ func (t *Tray) items() []layout {
 	}
 	for i, s := range t.services {
 		if i < len(t.actionIDs) {
-			properties := serviceProperties(formatService(s))
+			properties := serviceProperties(formatServiceName(s))
 			properties["icon-name"] = dbus.MakeVariant("process-stop")
 			properties["accessible-desc"] = dbus.MakeVariant("Stop " + formatServiceName(s))
 			items = append(items, layout{ID: t.actionIDs[i], Properties: properties, Children: []dbus.Variant{}})
@@ -361,27 +361,11 @@ func serviceProperties(label string) map[string]dbus.Variant {
 	}
 }
 
-func formatService(s monitor.Service) string {
-	label := formatServiceName(s)
-	var metrics []string
-	if s.CPUValid {
-		metrics = append(metrics, fmt.Sprintf("CPU %.1f%%", s.CPU))
-	}
-	if s.MemoryValid {
-		metrics = append(metrics, fmt.Sprintf("Memory %.0f MB", s.MemoryMB))
-	}
-	if len(metrics) > 0 {
-		label += "\n" + strings.Join(metrics, " · ")
-	}
-	return label
-}
-
 func formatServiceName(s monitor.Service) string {
 	var parts []string
 	if s.Project != "" {
 		parts = append(parts, filepath.Base(s.Project))
-	}
-	if s.Name != "" && !slices.Contains(parts, s.Name) {
+	} else if s.Name != "" {
 		parts = append(parts, s.Name)
 	}
 	if s.Docker {
@@ -397,23 +381,7 @@ func formatServiceName(s monitor.Service) string {
 	if len(ports) > 0 {
 		parts = append(parts, ":"+strings.Join(ports, ", :"))
 	}
-	if s.Branch != "" {
-		parts = append(parts, s.Branch)
-	}
-	if s.Uptime > 0 {
-		parts = append(parts, formatUptime(s.Uptime))
-	}
 	return strings.Join(parts, " · ")
-}
-
-func formatUptime(uptime time.Duration) string {
-	if uptime >= 24*time.Hour {
-		return fmt.Sprintf("%dd", int(uptime/(24*time.Hour)))
-	}
-	if uptime >= time.Hour {
-		return fmt.Sprintf("%dh", int(uptime/time.Hour))
-	}
-	return fmt.Sprintf("%dm", max(1, int(uptime/time.Minute)))
 }
 
 func (t *Tray) GetLayout(parent int32, depth int32, properties []string) (uint32, layout, *dbus.Error) {

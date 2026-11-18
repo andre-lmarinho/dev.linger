@@ -13,8 +13,8 @@
       gracefully stops local development servers and Docker containers.
     </p>
     <p>
-      View project names, ports, Git branches, uptime and available
-      resource metrics without keeping your development tools open.
+      View project names and ports without keeping your development
+      tools open.
     </p>
   </description>
 
