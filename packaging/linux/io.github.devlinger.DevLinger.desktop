@@ -2,7 +2,7 @@
 Type=Application
 Name=DevLinger
 Icon=io.github.devlinger.DevLinger
-Comment=Linux system tray monitor for local development services
+Comment=Monitor and stop local development services from the Linux system tray
 Exec=/usr/bin/devlinger
 Terminal=false
 Categories=System;Monitor;

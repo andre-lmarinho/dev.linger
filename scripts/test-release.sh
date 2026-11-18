@@ -62,7 +62,7 @@ Installed-Size: 1
 Maintainer: DevLinger contributors
 Architecture: amd64
 Version: $installed_version
-Description: Linux system tray monitor for local development services
+Description: Monitor and stop local development services from the Linux system tray
 EOF
 
 opts=(
