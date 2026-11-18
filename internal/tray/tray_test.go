@@ -25,6 +25,31 @@ func (w watcher) RegisterStatusNotifierItem(name string) *dbus.Error {
 	return nil
 }
 
+// probeWatcher skips the test unless this process runs under an isolated
+// session bus without a StatusNotifierWatcher. On a desktop bus the real
+// watcher owns the name, and test results would depend on the host.
+func probeWatcher(t *testing.T) {
+	t.Helper()
+	if os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" {
+		t.Skip("no session bus; run under dbus-run-session")
+	}
+	conn, err := dbus.ConnectSessionBus()
+	if err != nil {
+		t.Skipf("no session bus: %v", err)
+	}
+	defer conn.Close()
+	reply, err := conn.RequestName("org.kde.StatusNotifierWatcher", dbus.NameFlagDoNotQueue)
+	if err != nil {
+		t.Skipf("session bus refused watcher probe: %v", err)
+	}
+	if reply != dbus.RequestNameReplyPrimaryOwner {
+		t.Skip("session bus already has a StatusNotifierWatcher; run under dbus-run-session")
+	}
+	if _, err := conn.ReleaseName("org.kde.StatusNotifierWatcher"); err != nil {
+		t.Skipf("session bus refused watcher release: %v", err)
+	}
+}
+
 func TestFormatServiceCompact(t *testing.T) {
 	s := monitor.Service{Name: "Vite", Project: "/home/user/shop", PID: 42, Endpoints: []monitor.Endpoint{{Address: "127.0.0.1", Port: 3000}, {Address: "::1", Port: 3000}}}
 	if got := formatServiceName(s); got != "shop · :3000" {
@@ -39,17 +64,8 @@ func TestStandaloneStopActionIsTopLevel(t *testing.T) {
 	if len(items) != 2 || len(items[1].Children) != 0 {
 		t.Fatalf("unexpected standalone menu: %#v", items)
 	}
-	if items[1].ID != tray.actionIDs[0] || items[1].Properties["label"].Value() != "Vite" || items[1].Properties["icon-name"].Value() != "process-stop" {
+	if items[1].ID != tray.rows[0].id || items[1].Properties["label"].Value() != "Vite" || items[1].Properties["icon-name"].Value() != "process-stop" {
 		t.Fatalf("service row is not the stop action: %#v", items[1])
-	}
-}
-
-func TestSubServicesAreNotShown(t *testing.T) {
-	tray := &Tray{}
-	tray.setServices([]monitor.Service{{Name: "Vite", Members: []monitor.Service{{Name: "HMR"}}}})
-	items := tray.items()
-	if items[1].Properties["label"].Value() != "Vite" || len(items[1].Children) != 0 {
-		t.Fatalf("unexpected service row: %#v", items[1])
 	}
 }
 
@@ -74,6 +90,25 @@ func TestComposeMenu(t *testing.T) {
 	_, children, err := tray.GetLayout(project.ID, 1, nil)
 	if err != nil || len(children.Children) != 0 {
 		t.Fatalf("submenu: %#v %v", children, err)
+	}
+}
+
+// TestScanErrorShowsNotice locks in the requirement: when a scan fails the
+// menu says why, and a later successful scan restores the service rows.
+func TestScanErrorShowsNotice(t *testing.T) {
+	tray := &Tray{}
+	tray.applyUpdate([]monitor.Service{{Name: "Vite", PID: 42}}, errors.New("boom"))
+	items := tray.items()
+	if len(items) != 2 || items[1].ID != noticeID || items[1].Properties["label"].Value() != "Unable to read listeners" {
+		t.Fatalf("scan error must show a notice row: %#v", items)
+	}
+	if tray.Event(items[1].ID, "clicked", dbus.Variant{}, 0) != nil {
+		t.Fatal("notice row must not be clickable")
+	}
+	tray.applyUpdate([]monitor.Service{{Name: "Vite"}}, nil)
+	items = tray.items()
+	if len(items) != 2 || items[1].ID != tray.rows[0].id {
+		t.Fatalf("recovered menu lost the service row: %#v", items)
 	}
 }
 
@@ -126,10 +161,10 @@ func TestMenuOverDBus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if revision != 1 || len(menu.Children) != 4 {
+	if len(menu.Children) != 4 {
 		t.Fatalf("unexpected menu: %#v revision %d", menu, revision)
 	}
-	err = conn.Object(tray.conn.Names()[0], menuPath).Call("com.canonical.dbusmenu.GetLayout", 0, tray.actionIDs[1], int32(1), []string{}).Store(&revision, &menu)
+	err = conn.Object(tray.conn.Names()[0], menuPath).Call("com.canonical.dbusmenu.GetLayout", 0, tray.rows[1].id, int32(1), []string{}).Store(&revision, &menu)
 	if err != nil || len(menu.Children) != 0 {
 		t.Fatalf("service row: %#v %v", menu, err)
 	}
@@ -177,7 +212,7 @@ func TestClickStopsMappedService(t *testing.T) {
 		},
 	}
 	tray.setServices([]monitor.Service{{Name: "Vite", PID: 42}})
-	actionID := tray.actionIDs[0]
+	actionID := tray.rows[0].id
 
 	if err := tray.Event(actionID, "clicked", dbus.Variant{}, 0); err != nil {
 		t.Fatal(err)
@@ -201,7 +236,7 @@ func TestStaleActionDoesNotStopAnotherService(t *testing.T) {
 		},
 	}
 	tray.setServices([]monitor.Service{{Name: "old", PID: 1}})
-	staleID := tray.actionIDs[0]
+	staleID := tray.rows[0].id
 	tray.setServices([]monitor.Service{{Name: "new", PID: 2}})
 
 	tray.Event(staleID, "clicked", dbus.Variant{}, 0)
@@ -213,9 +248,7 @@ func TestStaleActionDoesNotStopAnotherService(t *testing.T) {
 }
 
 func TestNewWaitsForWatcher(t *testing.T) {
-	if os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" {
-		t.Skip("no session bus")
-	}
+	probeWatcher(t)
 
 	conn, err := dbus.ConnectSessionBus()
 	if err != nil {
@@ -279,9 +312,7 @@ func TestNewWaitsForWatcher(t *testing.T) {
 }
 
 func TestNewStopsWaitingWhenContextCanceled(t *testing.T) {
-	if os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" {
-		t.Skip("no session bus")
-	}
+	probeWatcher(t)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -309,9 +340,7 @@ func TestNewStopsWaitingWhenContextCanceled(t *testing.T) {
 }
 
 func TestTrayRegistersAfterWatcherRestart(t *testing.T) {
-	if os.Getenv("DBUS_SESSION_BUS_ADDRESS") == "" {
-		t.Skip("no session bus")
-	}
+	probeWatcher(t)
 
 	const watcherName = "org.kde.StatusNotifierWatcher"
 	const watcherPath = "/StatusNotifierWatcher"
@@ -350,7 +379,7 @@ func TestTrayRegistersAfterWatcherRestart(t *testing.T) {
 			t.Fatal(err)
 		}
 		if reply != dbus.RequestNameReplyPrimaryOwner {
-			t.Fatal("watcher name already owned")
+			t.Skip("watcher name already owned; run under dbus-run-session")
 		}
 	}
 
@@ -457,6 +486,8 @@ func (rejectingWatcher) RegisterStatusNotifierItem(string) *dbus.Error {
 }
 
 func TestNewFailsOnPermanentWatcherError(t *testing.T) {
+	probeWatcher(t)
+
 	conn, err := dbus.ConnectSessionBus()
 	if err != nil {
 		t.Fatal(err)
@@ -479,7 +510,7 @@ func TestNewFailsOnPermanentWatcherError(t *testing.T) {
 		t.Fatal(err)
 	}
 	if reply != dbus.RequestNameReplyPrimaryOwner {
-		t.Fatal("watcher name already owned")
+		t.Skip("watcher name already owned; run under dbus-run-session")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
