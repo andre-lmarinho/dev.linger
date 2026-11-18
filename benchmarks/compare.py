@@ -15,11 +15,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-SOURCES = (
-    "internal/monitor/fixture_perf_test.go",
-    "internal/monitor/perf_test.go",
-    "internal/tray/perf_test.go",
-)
 PACKAGES = {
     "monitor": r"Benchmark(ControlledWorkload|Catalog)",
     "tray": r"^BenchmarkLayout$",
@@ -37,10 +32,24 @@ def run(command, cwd, env=None):
     )
 
 
+def fixture_sources(root):
+    return {
+        path.relative_to(root).as_posix()
+        for package in PACKAGES
+        for path in (root / "internal" / package).glob("*perf_test.go")
+    }
+
+
 def verify_same_fixture(before, after):
+    sources = fixture_sources(before) | fixture_sources(after)
+    if not sources:
+        raise SystemExit("benchmark comparison found no *perf_test.go fixtures")
     different = [
-        path for path in SOURCES
-        if (before / path).read_bytes() != (after / path).read_bytes()
+        path
+        for path in sorted(sources)
+        if not (before / path).is_file()
+        or not (after / path).is_file()
+        or (before / path).read_bytes() != (after / path).read_bytes()
     ]
     if different:
         raise SystemExit(

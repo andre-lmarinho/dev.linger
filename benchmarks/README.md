@@ -56,6 +56,6 @@ The comparator answers one question: does the candidate do more work than the ba
 python3 benchmarks/compare.py /absolute/path/to/base /absolute/path/to/candidate
 ```
 
-It requires both revisions to contain identical benchmark and fixture sources, compiles each revision's test and release binaries with the same Go toolchain, and reports `allocs/op`, `B/op` and binary size. It exits non-zero when the candidate allocates more per operation, allocates more bytes (1% tolerance), or produces a larger release binary. Base and candidate run in the same invocation, so hardware, OS and Go version are shared conditions, not baseline data.
+It requires both revisions to contain identical benchmark and fixture sources. Those sources are discovered by the `*perf_test.go` naming convention in `internal/monitor` and `internal/tray`, so a new fixture is protected automatically. The comparator compiles each revision's test and release binaries with the same Go toolchain, and reports `allocs/op`, `B/op` and binary size. It exits non-zero when the candidate allocates more per operation, allocates more bytes (1% tolerance), or produces a larger release binary. Base and candidate run in the same invocation, so hardware, OS and Go version are shared conditions, not baseline data.
 
 Raw one-off notes may be kept under `benchmarks/experiments/` (ignored by Git). Anything that cannot be reproduced identically on another machine does not belong in the repository.
