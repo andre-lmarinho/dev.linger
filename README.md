@@ -24,7 +24,7 @@ After the APT repository is published, install with:
 curl -fsSL https://andre-lmarinho.github.io/dev.linger/install.sh | bash
 ```
 
-This downloads and runs the [installation script](scripts/install.sh), which configures the signed APT repository, installs DevLinger and starts it in the current desktop session. Review the script before running it if you prefer. If DevLinger is already running, it will not start another instance. Updates are installed with `sudo apt update && sudo apt upgrade`; restart DevLinger to run the new version. To remove the application, run `sudo apt remove devlinger`; remove `/etc/apt/sources.list.d/devlinger.list` and `/usr/share/keyrings/devlinger.gpg` separately if you no longer want this repository.
+This downloads and runs the [installation script](scripts/install.sh.in), which configures the signed APT repository, installs DevLinger and starts it in the current desktop session. The published installer is generated from that template with the identity values in `metadata.sh`. Review the script before running it if you prefer. If DevLinger is already running, it will not start another instance. Updates are installed with `sudo apt update && sudo apt upgrade`; restart DevLinger to run the new version. To remove the application, run `sudo apt remove devlinger`; remove `/etc/apt/sources.list.d/devlinger.list` and `/usr/share/keyrings/devlinger.gpg` separately if you no longer want this repository.
 
 Already installed the `v0.1.0` `.deb`? Run the same installation command once to add the repository and upgrade the package.
 
@@ -66,6 +66,10 @@ To disable autostart for your user, copy the system-wide Desktop Entry to `~/.co
 ```sh
 dbus-run-session -- go test -race ./...
 go vet ./...
+
+# After installing nFPM v2.43.0, exercise and compare the DEB, RPM/nFPM,
+# AUR and AppImage install layouts without publishing anything.
+scripts/test-package-layouts.sh
 ```
 
 Performance benchmarks and baseline: [`benchmarks/README.md`](benchmarks/README.md).

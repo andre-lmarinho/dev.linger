@@ -6,6 +6,9 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
+// busName is the compiled AppID. metadata.sh is the single source of
+// DevLinger's identity; this constant mirrors it and
+// TestBusNameMatchesMetadata enforces the sync on every go test run.
 const busName = "io.github.devlinger.DevLinger"
 
 func Acquire() (*dbus.Conn, bool, error) {

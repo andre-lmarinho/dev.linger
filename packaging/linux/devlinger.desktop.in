@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=DevLinger
-Icon=io.github.devlinger.DevLinger
+Icon=@APPID@
 Comment=Monitor and stop local development services from the Linux system tray
 Exec=/usr/bin/devlinger
 Terminal=false

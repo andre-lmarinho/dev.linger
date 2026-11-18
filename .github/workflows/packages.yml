@@ -32,11 +32,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y appstream desktop-file-utils
 
+          set -euo pipefail
+          . metadata.sh
+
+          scripts/expand-assets.sh dist/assets
+
           desktop-file-validate \
-            packaging/linux/io.github.devlinger.DevLinger.desktop
+            "dist/assets/usr/share/applications/$APPID.desktop"
 
           appstreamcli validate --strict \
-            packaging/linux/io.github.devlinger.DevLinger.metainfo.xml
+            "dist/assets/usr/share/metainfo/$APPID.metainfo.xml"
 
   rpm:
     runs-on: ubuntu-latest
@@ -64,10 +69,17 @@ jobs:
         run: |
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.0
 
+      - name: Test all package layouts
+        run: scripts/test-package-layouts.sh
+
       - name: Build RPM
         run: |
+          set -euo pipefail
+
           VERSION=$(cat VERSION)
           export VERSION
+
+          scripts/stage-install.sh system dist/package-root dist/devlinger
 
           "$(go env GOPATH)/bin/nfpm" package \
             --config packaging/nfpm.yaml \
@@ -103,6 +115,10 @@ jobs:
       - name: Prepare PR source archive
         shell: bash
         run: |
+          set -euo pipefail
+
+          . metadata.sh
+
           mkdir -p /tmp/devlinger-aur
 
           tar \
@@ -118,6 +134,7 @@ jobs:
           sed \
             -e 's/@VERSION@/0.0.0/g' \
             -e "s/@SHA256@/$checksum/g" \
+            -e "s|@REPO_URL@|$REPO_URL|g" \
             -e 's|source=.*|source=("devlinger-0.0.0.tar.gz")|' \
             packaging/aur/PKGBUILD.in \
             > /tmp/devlinger-aur/PKGBUILD
@@ -194,6 +211,8 @@ jobs:
         run: |
           set -euo pipefail
 
+          . metadata.sh
+
           appimage=(dist/DevLinger-*.AppImage)
           test "${#appimage[@]}" -eq 1
 
@@ -204,9 +223,9 @@ jobs:
 
           test -x squashfs-root/usr/bin/devlinger
           test -e squashfs-root/AppRun
-          test -e squashfs-root/io.github.devlinger.DevLinger.desktop
-          test -e squashfs-root/io.github.devlinger.DevLinger.svg
-          test -e squashfs-root/usr/share/metainfo/io.github.devlinger.DevLinger.metainfo.xml
+          test -e squashfs-root/$APPID.desktop
+          test -e squashfs-root/$APPID.svg
+          test -e squashfs-root/usr/share/metainfo/$APPID.metainfo.xml
 
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4

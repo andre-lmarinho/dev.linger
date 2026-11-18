@@ -117,6 +117,9 @@ jobs:
         run: |
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.0
 
+      - name: Test all package layouts
+        run: scripts/test-package-layouts.sh
+
       - name: Download appimagetool
         run: |
           curl --fail --location --retry 3 \
@@ -133,6 +136,10 @@ jobs:
         env:
           VERSION: ${{ needs.publish.outputs.version }}
         run: |
+          set -euo pipefail
+
+          scripts/stage-install.sh system dist/package-root dist/devlinger
+
           "$(go env GOPATH)/bin/nfpm" package \
             --config packaging/nfpm.yaml \
             --packager rpm \
@@ -165,6 +172,8 @@ jobs:
         run: |
           set -euo pipefail
 
+          . ./metadata.sh
+
           dpkg-deb --info dist/*.deb
           rpm -qpl dist/*.rpm
 
@@ -179,9 +188,9 @@ jobs:
 
           test -x squashfs-root/usr/bin/devlinger
           test -e squashfs-root/AppRun
-          test -e squashfs-root/io.github.devlinger.DevLinger.desktop
-          test -e squashfs-root/io.github.devlinger.DevLinger.svg
-          test -e squashfs-root/usr/share/metainfo/io.github.devlinger.DevLinger.metainfo.xml
+          test -e squashfs-root/$APPID.desktop
+          test -e squashfs-root/$APPID.svg
+          test -e squashfs-root/usr/share/metainfo/$APPID.metainfo.xml
 
           rm -rf squashfs-root DevLinger.AppDir devlinger
 
