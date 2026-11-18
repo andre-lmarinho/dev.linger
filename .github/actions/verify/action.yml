@@ -1,0 +1,28 @@
+name: Verify DevLinger
+description: Run code, benchmark and packaging checks
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    - name: Test
+      shell: bash
+      run: |
+        dbus-run-session -- go test ./...
+        dbus-run-session -- go test -race ./...
+        go vet ./...
+        scripts/release-guard_test.sh
+
+    - name: Install packaging test dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y apt-utils appstream desktop-file-utils
+
+    - name: Test packaging
+      shell: bash
+      run: scripts/test-release.sh
